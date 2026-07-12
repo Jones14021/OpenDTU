@@ -9,6 +9,7 @@
 #include "InverterSettings.h"
 #include "Led_Single.h"
 #include "Logging.h"
+#include "MeanwellCan.h"
 #include "MessageOutput.h"
 #include "MqttHandleDtu.h"
 #include "MqttHandleHass.h"
@@ -110,6 +111,7 @@ void setup()
     MqttHandleInverter.init(scheduler);
     MqttHandleInverterTotal.init(scheduler);
     MqttHandleHass.init(scheduler);
+    MeanwellCan.init();
 
     // Initialize WebApi
     ESP_LOGI(TAG, "Initializing WebApi...");

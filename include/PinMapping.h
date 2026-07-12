@@ -34,6 +34,12 @@ struct PinMapping_t {
     gpio_num_t w5500_int;
     gpio_num_t w5500_rst;
 
+    gpio_num_t can_sck;
+    gpio_num_t can_mosi;
+    gpio_num_t can_miso;
+    gpio_num_t can_cs;
+    gpio_num_t can_int;
+
 #if CONFIG_ETH_USE_ESP32_EMAC
     int8_t eth_phy_addr;
     bool eth_enabled;
@@ -64,6 +70,7 @@ public:
     bool isValidNrf24Config() const;
     bool isValidCmt2300Config() const;
     bool isValidW5500Config() const;
+    bool isValidCanConfig() const;
 #if CONFIG_ETH_USE_ESP32_EMAC
     bool isValidEthConfig() const;
 #endif

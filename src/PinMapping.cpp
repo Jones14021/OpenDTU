@@ -112,6 +112,26 @@ static const char* TAG = "pinmapping";
 #define W5500_RST GPIO_NUM_NC
 #endif
 
+#ifndef CAN_SCK
+#define CAN_SCK GPIO_NUM_NC
+#endif
+
+#ifndef CAN_MOSI
+#define CAN_MOSI GPIO_NUM_NC
+#endif
+
+#ifndef CAN_MISO
+#define CAN_MISO GPIO_NUM_NC
+#endif
+
+#ifndef CAN_CS
+#define CAN_CS GPIO_NUM_NC
+#endif
+
+#ifndef CAN_INT
+#define CAN_INT GPIO_NUM_NC
+#endif
+
 #if CONFIG_ETH_USE_ESP32_EMAC
 
 #ifndef ETH_PHY_ADDR
@@ -165,6 +185,12 @@ PinMappingClass::PinMappingClass()
     _pinMapping.w5500_cs = W5500_CS;
     _pinMapping.w5500_int = W5500_INT;
     _pinMapping.w5500_rst = W5500_RST;
+
+    _pinMapping.can_sck = CAN_SCK;
+    _pinMapping.can_mosi = CAN_MOSI;
+    _pinMapping.can_miso = CAN_MISO;
+    _pinMapping.can_cs = CAN_CS;
+    _pinMapping.can_int = CAN_INT;
 
 #if CONFIG_ETH_USE_ESP32_EMAC
 #ifdef OPENDTU_ETHERNET
@@ -248,6 +274,12 @@ bool PinMappingClass::init(const String& deviceMapping)
             _pinMapping.w5500_int = doc[i]["w5500"]["int"] | W5500_INT;
             _pinMapping.w5500_rst = doc[i]["w5500"]["rst"] | W5500_RST;
 
+            _pinMapping.can_sck = doc[i]["can"]["sck"] | CAN_SCK;
+            _pinMapping.can_mosi = doc[i]["can"]["mosi"] | CAN_MOSI;
+            _pinMapping.can_miso = doc[i]["can"]["miso"] | CAN_MISO;
+            _pinMapping.can_cs = doc[i]["can"]["cs"] | CAN_CS;
+            _pinMapping.can_int = doc[i]["can"]["int"] | CAN_INT;
+
 #if CONFIG_ETH_USE_ESP32_EMAC
 #ifdef OPENDTU_ETHERNET
             _pinMapping.eth_enabled = doc[i]["eth"]["enabled"] | true;
@@ -304,6 +336,14 @@ bool PinMappingClass::isValidW5500Config() const
         && _pinMapping.w5500_cs > GPIO_NUM_NC
         && _pinMapping.w5500_int > GPIO_NUM_NC
         && _pinMapping.w5500_rst > GPIO_NUM_NC;
+}
+
+bool PinMappingClass::isValidCanConfig() const
+{
+    return _pinMapping.can_sck > GPIO_NUM_NC
+        && _pinMapping.can_mosi > GPIO_NUM_NC
+        && _pinMapping.can_miso > GPIO_NUM_NC
+        && _pinMapping.can_cs > GPIO_NUM_NC;
 }
 
 #if CONFIG_ETH_USE_ESP32_EMAC

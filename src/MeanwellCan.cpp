@@ -361,7 +361,7 @@ void MeanwellCanClass::decodeMeanwellPbn(const CanFrame& frame)
 
 void MeanwellCanClass::publishMetric(const String& topic, float value, const uint8_t decimals)
 {
-    MqttSettings.publish(topic, String(value, decimals));
+    MqttSettings.publish(topic, String(value, static_cast<unsigned int>(decimals)));
 }
 
 uint8_t MeanwellCanClass::readRegister(uint8_t address)

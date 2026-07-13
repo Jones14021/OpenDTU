@@ -1,0 +1,28 @@
+{
+    "name": "OpenDTU PlatformIO",
+    "build": {
+        "dockerfile": "Dockerfile"
+    },
+    
+    // Pass the USB port from your NixOS host into the container for flashing.
+    // CHANGE THIS if your ESP32 shows up as /dev/ttyACM0 instead of /dev/ttyUSB0
+    "runArgs": [
+        "--device=/dev/ttyUSB0"
+    ],
+
+    "customizations": {
+        "vscode": {
+            "settings": {
+                "terminal.integrated.defaultProfile.linux": "bash"
+            },
+            "extensions": [
+                "platformio.platformio-ide",
+                "ms-vscode.cpptools",
+                "ms-vscode.cpptools-extension-pack"
+            ]
+        }
+    },
+
+    // Set the user to the default vscode user provided by the base image
+    "remoteUser": "vscode"
+}

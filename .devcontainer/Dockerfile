@@ -1,6 +1,9 @@
 # Use the official Python dev container image (Debian Bullseye)
 FROM mcr.microsoft.com/devcontainers/python:1-3.11-bullseye
 
+# Remove the broken Yarn repository list before running apt-get update
+RUN rm -f /etc/apt/sources.list.d/yarn.list
+
 # Install dependencies required by ESP32 toolchains and PlatformIO
 RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
     && apt-get -y install --no-install-recommends \
@@ -17,6 +20,5 @@ RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
 # Install PlatformIO CLI globally
 RUN pip3 install --no-cache-dir --upgrade platformio
 
-# Create a udev rule directory to prevent PIO warnings, though USB 
-# pass-through will be handled by Docker runArgs in devcontainer.json
+# Create a udev rule directory to prevent PIO warnings
 RUN mkdir -p /etc/udev/rules.d

@@ -4,10 +4,13 @@
         "dockerfile": "Dockerfile"
     },
     
-    // Pass the USB port from your NixOS host into the container for flashing.
-    // CHANGE THIS if your ESP32 shows up as /dev/ttyACM0 instead of /dev/ttyUSB0
-    "runArgs": [
-        "--device=/dev/ttyUSB0"
+    // Give the container permissions to access host devices dynamically
+    "privileged": true,
+
+    // Mount the host's /dev directory into the container's /dev directory.
+    // This allows the container to instantly see when ttyUSB0 or ttyACM0 appears or disappears.
+    "mounts": [
+        "source=/dev,target=/dev,type=bind"
     ],
 
     "customizations": {

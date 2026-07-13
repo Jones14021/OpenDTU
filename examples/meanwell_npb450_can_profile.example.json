@@ -1,0 +1,29 @@
+{
+  "protocol_source": "Mean Well NPB-450 CAN protocol document (vendor-provided)",
+  "mqtt": {
+    "prefix": "solar/",
+    "tx_topic": "meanwell/can/tx",
+    "rx_topic": "meanwell/can/rx"
+  },
+  "rx_ids": {
+    "charger_output": "0x305",
+    "battery_output": "0x306",
+    "temperature_status": "0x307",
+    "alarm_status": "0x30A"
+  },
+  "tx_ids": {
+    "set_charge_current": "0x000",
+    "set_charge_voltage": "0x000",
+    "charger_enable": "0x000"
+  },
+  "encoding": {
+    "setpoint_scale": 10,
+    "setpoint_endianness": "little",
+    "setpoint_offset": 0,
+    "setpoint_width": 2,
+    "command_dlc": 8,
+    "enable_byte_index": 0,
+    "enable_on_value": 1,
+    "enable_off_value": 0
+  }
+}

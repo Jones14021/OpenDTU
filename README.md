@@ -19,6 +19,21 @@ It was the goal to replace the original Hoymiles DTU (Telemetry Gateway) with th
 The documentation can be found [here](https://tbnobody.github.io/OpenDTU-docs/).
 Please feel free to support and create a PR in [this](https://github.com/tbnobody/OpenDTU-docs) repository to make the documentation even better.
 
+## Custom Use Case: Hoymiles + Mean Well NPB-450 + Zero Export
+
+This repository can be used as a combined gateway for:
+
+1. Hoymiles inverter communication over CMT2300A.
+2. Mean Well NPB-450 charger communication over MCP2515 CAN.
+3. Zero net export control by publishing CAN commands through MQTT.
+
+For this setup, use the examples in [`examples/`](examples):
+
+1. [`examples/device_profile_npb450_gateway.json`](examples/device_profile_npb450_gateway.json): board pin mapping (CMT + ETH + MCP2515).
+2. [`examples/meanwell_npb450_can_profile.example.json`](examples/meanwell_npb450_can_profile.example.json): CAN ID/config profile.
+3. [`examples/npb450_zero_export_sim.py`](examples/npb450_zero_export_sim.py): Python MQTT control loop example for zero-export style charging.
+4. [`examples/README.md`](examples/README.md): end-to-end flow, CAN ID table, and Mermaid diagrams.
+
 ## Breaking changes
 
 Generated using: `git log --date=short --pretty=format:"* %h%x09%ad%x09%s" | grep BREAKING`

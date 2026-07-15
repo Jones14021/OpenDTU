@@ -25,3 +25,6 @@ RUN pip3 install --no-cache-dir --upgrade platformio esptool
 
 # Create a udev rule directory to prevent PIO warnings
 RUN mkdir -p /etc/udev/rules.d
+
+# Add the vscode user to the dialout group so it can access serial devices (e.g. /dev/ttyUSB0)
+RUN usermod -aG dialout vscode

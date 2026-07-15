@@ -16,13 +16,13 @@ log() {
 }
 
 check_esptool() {
-	if command -v esptool.py >/dev/null 2>&1; then
-		ESPTOOL_CMD=(esptool.py)
+	if command -v esptool >/dev/null 2>&1; then
+		ESPTOOL_CMD=(esptool)
 		return
 	fi
 
-	if command -v esptool >/dev/null 2>&1; then
-		ESPTOOL_CMD=(esptool)
+	if command -v esptool.py >/dev/null 2>&1; then
+		ESPTOOL_CMD=(esptool.py)
 		return
 	fi
 
@@ -128,7 +128,7 @@ main() {
 	log "Starting flash with: ${ESPTOOL_CMD[*]}"
 	log "Writing ${FACTORY_BIN} to ${flash_device}"
 
-	if "${ESPTOOL_CMD[@]}" --chip esp32 --port "$flash_device" write_flash 0x0 "$FACTORY_BIN"; then
+	if "${ESPTOOL_CMD[@]}" --chip esp32 --port "$flash_device" write-flash 0x0 "$FACTORY_BIN"; then
 		log "Status: success"
 	else
 		local status=$?

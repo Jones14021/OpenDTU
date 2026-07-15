@@ -14,8 +14,8 @@
       "sdio": 14,
       "cs": 4,
       "fcs": 16,
-      "gpio2": 2,
-      "gpio3": 3
+      "gpio2": -1,
+      "gpio3": -1
     },
     "eth": {
       "enabled": true,

@@ -13,6 +13,9 @@
         "source=/dev,target=/dev,type=bind"
     ],
 
+    // Map host serial device GID to an in-container group and add vscode to it.
+    "postStartCommand": "sudo bash .devcontainer/setup-serial-group.sh",
+
     "customizations": {
         "vscode": {
             "settings": {

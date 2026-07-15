@@ -23,8 +23,14 @@ RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
 # Install PlatformIO CLI and esptool globally
 RUN pip3 install --no-cache-dir --upgrade platformio esptool
 
+# Keep PlatformIO core data in the workspace mount so rebuilds do not re-download toolchains/packages.
+ENV PLATFORMIO_CORE_DIR=/workspaces/.platformio
+RUN mkdir -p /workspaces/.platformio \
+    && chown -R vscode:vscode /workspaces/.platformio
+
 # Create a udev rule directory to prevent PIO warnings
 RUN mkdir -p /etc/udev/rules.d
 
-# Add the vscode user to the dialout group so it can access serial devices (e.g. /dev/ttyUSB0)
+# Add the vscode user to common serial group.
+# A startup hook in devcontainer.json dynamically maps host-specific serial GIDs.
 RUN usermod -aG dialout vscode

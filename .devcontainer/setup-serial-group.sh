@@ -49,4 +49,4 @@ fi
 
 usermod -aG "${group_name}" "${TARGET_USER}"
 echo "[serial-group] Added ${TARGET_USER} to group ${group_name} (GID ${device_gid}) for ${device_path}."
-echo "[serial-group] Open a new terminal session to refresh group membership."
+echo "[serial-group] Group mapping updated. New 'bash (serial-aware)' terminals will activate this group automatically."

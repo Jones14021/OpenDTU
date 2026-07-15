@@ -31,6 +31,10 @@ RUN mkdir -p /workspaces/.platformio \
 # Create a udev rule directory to prevent PIO warnings
 RUN mkdir -p /etc/udev/rules.d
 
+# Install a terminal launcher that activates the serial device group in each new terminal.
+COPY .devcontainer/terminal-with-serial-group.sh /usr/local/bin/terminal-with-serial-group
+RUN chmod +x /usr/local/bin/terminal-with-serial-group
+
 # Add the vscode user to common serial group.
 # A startup hook in devcontainer.json dynamically maps host-specific serial GIDs.
 RUN usermod -aG dialout vscode

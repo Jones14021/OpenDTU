@@ -32,7 +32,7 @@ RUN mkdir -p /workspaces/.platformio \
 RUN mkdir -p /etc/udev/rules.d
 
 # Install a terminal launcher that activates the serial device group in each new terminal.
-COPY .devcontainer/terminal-with-serial-group.sh /usr/local/bin/terminal-with-serial-group
+COPY terminal-with-serial-group.sh /usr/local/bin/terminal-with-serial-group
 RUN chmod +x /usr/local/bin/terminal-with-serial-group
 
 # Add the vscode user to common serial group.

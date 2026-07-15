@@ -10,10 +10,7 @@
     // Mount the host's /dev directory into the container's /dev directory.
     // This allows the container to instantly see when ttyUSB0 or ttyACM0 appears or disappears.
     "mounts": [
-        "source=/dev,target=/dev,type=bind",
-        "source=opendtu-vscode-extensions,target=/home/vscode/.vscode-server/extensions,type=volume",
-        "source=opendtu-vscode-server-data,target=/home/vscode/.vscode-server/data,type=volume",
-        "source=opendtu-platformio-home,target=/home/vscode/.platformio,type=volume"
+        "source=/dev,target=/dev,type=bind"
     ],
 
     // Map host serial device GID to an in-container group and add vscode to it.

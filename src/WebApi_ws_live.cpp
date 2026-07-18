@@ -7,6 +7,7 @@
 #include "MeanwellCan.h"
 #include "Utils.h"
 #include "WebApi.h"
+#include "WebApi_errors.h"
 #include "defaults.h"
 #include <AsyncJson.h>
 
@@ -34,6 +35,7 @@ void WebApiWsLiveClass::init(AsyncWebServer& server, Scheduler& scheduler)
     using std::placeholders::_6;
 
     server.on("/api/livedata/status", HTTP_GET, static_cast<ArRequestHandlerFunction>(std::bind(&WebApiWsLiveClass::onLivedataStatus, this, _1)));
+    server.on("/api/livedata/charger/can_tx", HTTP_POST, static_cast<ArRequestHandlerFunction>(std::bind(&WebApiWsLiveClass::onChargerCanTx, this, _1)));
 
     server.addHandler(&_ws);
     _ws.onEvent(std::bind(&WebApiWsLiveClass::onWebsocketEvent, this, _1, _2, _3, _4, _5, _6));
@@ -294,4 +296,30 @@ void WebApiWsLiveClass::onLivedataStatus(AsyncWebServerRequest* request)
         ESP_LOGE(TAG, "Unknown exception in /api/livedata/status. Reason: \"%s\".", exc.what());
         WebApi.sendTooManyRequests(request);
     }
+}
+
+void WebApiWsLiveClass::onChargerCanTx(AsyncWebServerRequest* request)
+{
+    if (!WebApi.checkCredentials(request)) {
+        return;
+    }
+
+    AsyncJsonResponse* response = new AsyncJsonResponse();
+    JsonDocument root;
+    if (!WebApi.parseRequestData(request, response, root)) {
+        return;
+    }
+
+    auto& retMsg = response->getRoot();
+    String error;
+    if (!MeanwellCan.queueCanFrameFromJson(root.as<JsonVariantConst>(), error)) {
+        retMsg["message"] = error;
+        retMsg["code"] = WebApiError::GenericParseError;
+        WebApi.sendJsonResponse(request, response, __FUNCTION__, __LINE__);
+        return;
+    }
+
+    retMsg["message"] = "CAN frame queued";
+    retMsg["code"] = WebApiError::GenericSuccess;
+    WebApi.sendJsonResponse(request, response, __FUNCTION__, __LINE__);
 }

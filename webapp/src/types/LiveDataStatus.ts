@@ -97,12 +97,45 @@ export interface BatteryMetricsStatus {
     power_w?: number;
 }
 
+export interface Mcp2515Pinout {
+    sck?: number;
+    mosi?: number;
+    miso?: number;
+    cs?: number;
+    int?: number;
+}
+
+export interface Mcp2515Status {
+    configured?: boolean;
+    enabled?: boolean;
+    responding?: boolean;
+    mode_normal?: boolean;
+    active?: boolean;
+    rx_seen?: boolean;
+    rx_age_ms?: number;
+    tx_queue_depth?: number;
+    pinout?: Mcp2515Pinout;
+}
+
+export interface CanLogEntry {
+    timestamp_ms: number;
+    id: number;
+    ext: boolean;
+    rtr: boolean;
+    dlc: number;
+    data: number[];
+    meaning: string;
+}
+
 export interface ChargerStatus {
+    configured?: boolean;
     enabled: boolean;
     data_age_ms: number;
+    mcp2515?: Mcp2515Status;
     npb450: ChargerNpb450Status;
     charger: ChargerMetricsStatus;
     battery: BatteryMetricsStatus;
+    can_log?: CanLogEntry[];
 }
 
 export interface LiveData {

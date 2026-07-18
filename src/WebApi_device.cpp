@@ -58,6 +58,13 @@ void WebApiDeviceClass::onDeviceAdminGet(AsyncWebServerRequest* request)
     w5500PinObj["int"] = pin.w5500_int;
     w5500PinObj["rst"] = pin.w5500_rst;
 
+    auto canPinObj = curPin["can"].to<JsonObject>();
+    canPinObj["sck"] = pin.can_sck;
+    canPinObj["mosi"] = pin.can_mosi;
+    canPinObj["miso"] = pin.can_miso;
+    canPinObj["cs"] = pin.can_cs;
+    canPinObj["int"] = pin.can_int;
+
 #if CONFIG_ETH_USE_ESP32_EMAC
     auto ethPinObj = curPin["eth"].to<JsonObject>();
     ethPinObj["enabled"] = pin.eth_enabled;

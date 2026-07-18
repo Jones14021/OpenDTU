@@ -15,7 +15,10 @@
                     <div class="card-header d-flex justify-content-between flex-wrap gap-2 align-items-center">
                         <div class="fw-semibold">{{ $t('home.ChargerStatus') }}</div>
                         <div class="d-flex gap-2 flex-wrap align-items-center">
-                            <span class="badge text-bg-secondary" v-if="!liveData.charger.enabled">
+                            <span class="badge text-bg-secondary" v-if="!liveData.charger.configured">
+                                {{ $t('home.McpNotConfigured') }}
+                            </span>
+                            <span class="badge text-bg-secondary" v-else-if="!liveData.charger.enabled">
                                 {{ $t('home.Disabled') }}
                             </span>
                             <template v-else>
@@ -39,6 +42,14 @@
                             </template>
                             <DataAgeDisplay v-if="liveData.charger.data_age_ms >= 0" :data-age-ms="liveData.charger.data_age_ms" />
                             <span class="badge text-bg-warning" v-else>{{ $t('home.WaitingForChargerData') }}</span>
+                            <button
+                                type="button"
+                                class="btn btn-sm btn-outline-primary"
+                                :disabled="!liveData.charger.mcp2515?.configured || !liveData.charger.enabled || !isLogged"
+                                @click="openCanDialog"
+                            >
+                                {{ $t('home.CanDebug') }}
+                            </button>
                         </div>
                     </div>
                     <div class="card-body">
@@ -47,6 +58,50 @@
                                 <h6 class="text-uppercase text-muted mb-2">{{ $t('home.Npb450Control') }}</h6>
                                 <table class="table table-sm table-striped mb-0">
                                     <tbody>
+                                        <tr>
+                                            <td>{{ $t('home.McpConfigured') }}</td>
+                                            <td>{{ liveData.charger.mcp2515?.configured ? $t('base.Yes') : $t('base.No') }}</td>
+                                        </tr>
+                                        <tr>
+                                            <td>{{ $t('home.McpResponding') }}</td>
+                                            <td>{{ liveData.charger.mcp2515?.responding ? $t('base.Yes') : $t('base.No') }}</td>
+                                        </tr>
+                                        <tr>
+                                            <td>{{ $t('home.McpModeNormal') }}</td>
+                                            <td>{{ liveData.charger.mcp2515?.mode_normal ? $t('base.Yes') : $t('base.No') }}</td>
+                                        </tr>
+                                        <tr>
+                                            <td>{{ $t('home.McpActive') }}</td>
+                                            <td>
+                                                <span
+                                                    class="badge"
+                                                    :class="liveData.charger.mcp2515?.active ? 'text-bg-success' : 'text-bg-danger'"
+                                                >
+                                                    {{
+                                                        liveData.charger.mcp2515?.active
+                                                            ? $t('home.Active')
+                                                            : $t('home.Inactive')
+                                                    }}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td>{{ $t('home.McpRxAge') }}</td>
+                                            <td>
+                                                <DataAgeDisplay
+                                                    v-if="
+                                                        liveData.charger.mcp2515 &&
+                                                        (liveData.charger.mcp2515.rx_age_ms ?? -1) >= 0
+                                                    "
+                                                    :data-age-ms="liveData.charger.mcp2515?.rx_age_ms || 0"
+                                                />
+                                                <span v-else>-</span>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td>{{ $t('home.McpTxQueue') }}</td>
+                                            <td>{{ liveData.charger.mcp2515?.tx_queue_depth ?? 0 }}</td>
+                                        </tr>
                                         <tr>
                                             <td>{{ $t('home.Address') }}</td>
                                             <td>{{ liveData.charger.npb450.address ?? '-' }}</td>
@@ -135,8 +190,56 @@
                                             <td>{{ $t('home.BatteryPower') }}</td>
                                             <td>{{ $n(liveData.charger.battery.power_w ?? 0, 'decimalOneDigit') }} W</td>
                                         </tr>
+                                        <tr>
+                                            <td>{{ $t('home.PinSck') }}</td>
+                                            <td>{{ liveData.charger.mcp2515?.pinout?.sck ?? '-' }}</td>
+                                        </tr>
+                                        <tr>
+                                            <td>{{ $t('home.PinMosi') }}</td>
+                                            <td>{{ liveData.charger.mcp2515?.pinout?.mosi ?? '-' }}</td>
+                                        </tr>
+                                        <tr>
+                                            <td>{{ $t('home.PinMiso') }}</td>
+                                            <td>{{ liveData.charger.mcp2515?.pinout?.miso ?? '-' }}</td>
+                                        </tr>
+                                        <tr>
+                                            <td>{{ $t('home.PinCs') }}</td>
+                                            <td>{{ liveData.charger.mcp2515?.pinout?.cs ?? '-' }}</td>
+                                        </tr>
+                                        <tr>
+                                            <td>{{ $t('home.PinInt') }}</td>
+                                            <td>{{ liveData.charger.mcp2515?.pinout?.int ?? '-' }}</td>
+                                        </tr>
                                     </tbody>
                                 </table>
+                            </div>
+                            <div class="col-12">
+                                <h6 class="text-uppercase text-muted mb-2">{{ $t('home.CanRxLog') }}</h6>
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-striped mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th>{{ $t('home.TimeMs') }}</th>
+                                                <th>{{ $t('home.FrameId') }}</th>
+                                                <th>{{ $t('home.Flags') }}</th>
+                                                <th>{{ $t('home.Data') }}</th>
+                                                <th>{{ $t('home.Interpretation') }}</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr v-if="!chargerCanLog.length">
+                                                <td colspan="5" class="text-muted">{{ $t('home.NoCanLog') }}</td>
+                                            </tr>
+                                            <tr v-for="(entry, index) in chargerCanLog" :key="'canlog-' + index">
+                                                <td>{{ entry.timestamp_ms }}</td>
+                                                <td>{{ formatCanId(entry.id, entry.ext) }}</td>
+                                                <td>{{ formatCanFlags(entry) }}</td>
+                                                <td>{{ formatCanData(entry.data, entry.dlc) }}</td>
+                                                <td>{{ entry.meaning }}</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -478,6 +581,98 @@
         </div>
     </BasePage>
 
+    <ModalDialog modalId="chargerCanDebugView" :title="$t('home.CanDebug')" :loading="chargerCanLoading">
+        <BootstrapAlert v-model="showAlertCan" :variant="alertTypeCan">
+            {{ alertMessageCan }}
+        </BootstrapAlert>
+
+        <div class="row mb-3">
+            <label for="canPreset" class="col-sm-3 col-form-label">{{ $t('home.Preset') }}</label>
+            <div class="col-sm-9">
+                <select id="canPreset" class="form-select" v-model="selectedCanPreset" @change="onApplyCanPreset">
+                    <option value="">{{ $t('home.CustomFrame') }}</option>
+                    <option v-for="preset in canPresetOptions" :key="preset.id" :value="preset.id">
+                        {{ preset.label }}
+                    </option>
+                </select>
+            </div>
+        </div>
+
+        <div class="row mb-3">
+            <label for="canId" class="col-sm-3 col-form-label">{{ $t('home.FrameId') }}</label>
+            <div class="col-sm-9">
+                <input id="canId" type="text" class="form-control" v-model="canFrameForm.idHex" />
+            </div>
+        </div>
+
+        <div class="row mb-3">
+            <label for="canDlc" class="col-sm-3 col-form-label">{{ $t('home.Dlc') }}</label>
+            <div class="col-sm-9">
+                <input id="canDlc" type="number" min="0" max="8" class="form-control" v-model.number="canFrameForm.dlc" />
+            </div>
+        </div>
+
+        <div class="row mb-3">
+            <label for="canData" class="col-sm-3 col-form-label">{{ $t('home.DataBytes') }}</label>
+            <div class="col-sm-9">
+                <input id="canData" type="text" class="form-control" v-model="canFrameForm.dataHex" />
+            </div>
+        </div>
+
+        <div class="row mb-3">
+            <div class="col-sm-3"></div>
+            <div class="col-sm-9 d-flex gap-4">
+                <div class="form-check">
+                    <input id="canExt" class="form-check-input" type="checkbox" v-model="canFrameForm.ext" />
+                    <label class="form-check-label" for="canExt">{{ $t('home.ExtendedFrame') }}</label>
+                </div>
+                <div class="form-check">
+                    <input id="canRtr" class="form-check-input" type="checkbox" v-model="canFrameForm.rtr" />
+                    <label class="form-check-label" for="canRtr">{{ $t('home.RemoteRequest') }}</label>
+                </div>
+            </div>
+        </div>
+
+        <div class="d-flex justify-content-end mb-4">
+            <button class="btn btn-primary" type="button" @click="onSendCanFrame" :disabled="sendingCanFrame || !isLogged">
+                <template v-if="sendingCanFrame">
+                    <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                    <span role="status">&nbsp;{{ $t('home.Sending') }}</span>
+                </template>
+                <template v-else>
+                    {{ $t('home.SendCanFrame') }}
+                </template>
+            </button>
+        </div>
+
+        <h6 class="text-uppercase text-muted mb-2">{{ $t('home.CanRxLog') }}</h6>
+        <div class="table-responsive can-log-dialog-table">
+            <table class="table table-sm table-striped mb-0">
+                <thead>
+                    <tr>
+                        <th>{{ $t('home.TimeMs') }}</th>
+                        <th>{{ $t('home.FrameId') }}</th>
+                        <th>{{ $t('home.Flags') }}</th>
+                        <th>{{ $t('home.Data') }}</th>
+                        <th>{{ $t('home.Interpretation') }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr v-if="!chargerCanLog.length">
+                        <td colspan="5" class="text-muted">{{ $t('home.NoCanLog') }}</td>
+                    </tr>
+                    <tr v-for="(entry, index) in chargerCanLog" :key="'canlog-dialog-' + index">
+                        <td>{{ entry.timestamp_ms }}</td>
+                        <td>{{ formatCanId(entry.id, entry.ext) }}</td>
+                        <td>{{ formatCanFlags(entry) }}</td>
+                        <td>{{ formatCanData(entry.data, entry.dlc) }}</td>
+                        <td>{{ entry.meaning }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </ModalDialog>
+
     <ModalDialog modalId="eventView" :title="$t('home.EventLog')" :loading="eventLogLoading">
         <EventLog :eventLogList="eventLogList" />
     </ModalDialog>
@@ -649,7 +844,7 @@ import type { GridProfileRawdata } from '@/types/GridProfileRawdata';
 import type { GridProfileStatus } from '@/types/GridProfileStatus';
 import type { LimitConfig } from '@/types/LimitConfig';
 import type { LimitStatus } from '@/types/LimitStatus';
-import type { ChargerStatus, Inverter, LiveData } from '@/types/LiveDataStatus';
+import type { CanLogEntry, ChargerStatus, Inverter, LiveData } from '@/types/LiveDataStatus';
 import { authHeader, authUrl, handleResponse, isLoggedIn } from '@/utils/authentication';
 import * as bootstrap from 'bootstrap';
 import {
@@ -734,6 +929,27 @@ export default defineComponent({
             alertTypePower: 'info',
             showAlertPower: false,
             successCommandPower: '',
+            chargerCanDebugView: {} as bootstrap.Modal,
+            chargerCanLoading: false,
+            alertMessageCan: '',
+            alertTypeCan: 'info',
+            showAlertCan: false,
+            sendingCanFrame: false,
+            selectedCanPreset: '',
+            canFrameForm: {
+                idHex: '0x000',
+                dlc: 0,
+                dataHex: '',
+                ext: false,
+                rtr: false,
+            },
+            canPresetOptions: [
+                { id: 'npb_read_iout', label: 'NPB450: Read IOUT' },
+                { id: 'npb_read_status', label: 'NPB450: Read System Status' },
+                { id: 'npb_read_config', label: 'NPB450: Read System Config' },
+                { id: 'npb_operation_on', label: 'NPB450: Operation ON' },
+                { id: 'npb_operation_off', label: 'NPB450: Operation OFF' },
+            ],
 
             isWebsocketConnected: false,
         };
@@ -754,6 +970,7 @@ export default defineComponent({
         this.gridProfileView = new bootstrap.Modal('#gridProfileView');
         this.limitSettingView = new bootstrap.Modal('#limitSettingView');
         this.powerSettingView = new bootstrap.Modal('#powerSettingView');
+        this.chargerCanDebugView = new bootstrap.Modal('#chargerCanDebugView');
     },
     unmounted() {
         this.socket?.close();
@@ -794,6 +1011,10 @@ export default defineComponent({
                 return a.order - b.order;
             });
         },
+        chargerCanLog(): CanLogEntry[] {
+            const log = this.liveData.charger?.can_log || [];
+            return log.slice().reverse();
+        },
     },
     methods: {
         isLoggedIn,
@@ -806,11 +1027,14 @@ export default defineComponent({
                 .then((data) => {
                     if (!data.charger) {
                         data.charger = {
+                            configured: false,
                             enabled: false,
                             data_age_ms: -1,
+                            mcp2515: {},
                             npb450: {},
                             charger: {},
                             battery: {},
+                            can_log: [],
                         } as ChargerStatus;
                     }
                     this.liveData = data;
@@ -839,17 +1063,25 @@ export default defineComponent({
             if (newData.charger) {
                 if (!this.liveData.charger) {
                     this.liveData.charger = {
+                        configured: false,
                         enabled: false,
                         data_age_ms: -1,
+                        mcp2515: {},
                         npb450: {},
                         charger: {},
                         battery: {},
+                        can_log: [],
                     } as ChargerStatus;
                 }
+                if (!this.liveData.charger.mcp2515) {
+                    this.liveData.charger.mcp2515 = {};
+                }
                 Object.assign(this.liveData.charger, newData.charger);
+                Object.assign(this.liveData.charger.mcp2515, newData.charger.mcp2515 || {});
                 Object.assign(this.liveData.charger.npb450, newData.charger.npb450 || {});
                 Object.assign(this.liveData.charger.charger, newData.charger.charger || {});
                 Object.assign(this.liveData.charger.battery, newData.charger.battery || {});
+                this.liveData.charger.can_log = newData.charger.can_log || [];
             }
 
             const idx = this.liveData.inverters.findIndex((i) => i.serial === newData.inverters[0].serial);
@@ -1071,6 +1303,129 @@ export default defineComponent({
                     }
                 });
         },
+        openCanDialog() {
+            this.showAlertCan = false;
+            this.chargerCanDebugView.show();
+        },
+        onApplyCanPreset() {
+            const address = this.liveData.charger?.npb450?.address ?? 0;
+            const controllerId = 0x000c0100 + Math.min(Math.max(address, 0), 15);
+            const applyPreset = (cmd: number, value: number) => {
+                this.canFrameForm.ext = true;
+                this.canFrameForm.rtr = false;
+                this.canFrameForm.idHex = `0x${controllerId.toString(16).toUpperCase()}`;
+                this.canFrameForm.dlc = 4;
+                const bytes = [
+                    cmd & 0xff,
+                    (cmd >> 8) & 0xff,
+                    value & 0xff,
+                    (value >> 8) & 0xff,
+                ];
+                this.canFrameForm.dataHex = bytes.map((v) => v.toString(16).toUpperCase().padStart(2, '0')).join(' ');
+            };
+
+            switch (this.selectedCanPreset) {
+                case 'npb_read_iout':
+                    applyPreset(0x0061, 0x0000);
+                    break;
+                case 'npb_read_status':
+                    applyPreset(0x00c1, 0x0000);
+                    break;
+                case 'npb_read_config':
+                    applyPreset(0x00c2, 0x0000);
+                    break;
+                case 'npb_operation_on':
+                    applyPreset(0x0000, 0x0001);
+                    break;
+                case 'npb_operation_off':
+                    applyPreset(0x0000, 0x0000);
+                    break;
+                default:
+                    break;
+            }
+        },
+        parseCanDataBytes(dataHex: string): number[] {
+            const cleaned = dataHex.trim();
+            if (cleaned.length === 0) {
+                return [];
+            }
+
+            return cleaned
+                .split(/[\s,;:]+/)
+                .filter((token) => token.length > 0)
+                .map((token) => {
+                    const normalized = token.toLowerCase().startsWith('0x') ? token.slice(2) : token;
+                    if (!/^[0-9a-fA-F]{1,2}$/.test(normalized)) {
+                        throw new Error(String(this.$t('home.InvalidCanDataByte')));
+                    }
+                    return parseInt(normalized, 16);
+                });
+        },
+        onSendCanFrame() {
+            this.showAlertCan = false;
+
+            const idText = this.canFrameForm.idHex.trim();
+            const normalizedId = idText.toLowerCase().startsWith('0x') ? idText.slice(2) : idText;
+            if (!/^[0-9a-fA-F]{1,8}$/.test(normalizedId)) {
+                this.alertMessageCan = this.$t('home.InvalidCanId');
+                this.alertTypeCan = 'danger';
+                this.showAlertCan = true;
+                return;
+            }
+
+            const frameId = parseInt(normalizedId, 16);
+            if ((!this.canFrameForm.ext && frameId > 0x7ff) || (this.canFrameForm.ext && frameId > 0x1fffffff)) {
+                this.alertMessageCan = this.$t('home.InvalidCanId');
+                this.alertTypeCan = 'danger';
+                this.showAlertCan = true;
+                return;
+            }
+
+            let dataBytes: number[] = [];
+            try {
+                dataBytes = this.parseCanDataBytes(this.canFrameForm.dataHex);
+            } catch (error) {
+                this.alertMessageCan = String(error);
+                this.alertTypeCan = 'danger';
+                this.showAlertCan = true;
+                return;
+            }
+
+            const dlc = Math.min(8, Math.max(0, Number(this.canFrameForm.dlc) || 0));
+            if (dataBytes.length < dlc && !this.canFrameForm.rtr) {
+                this.alertMessageCan = this.$t('home.NotEnoughCanData');
+                this.alertTypeCan = 'danger';
+                this.showAlertCan = true;
+                return;
+            }
+
+            const payload = {
+                id: frameId,
+                ext: this.canFrameForm.ext,
+                rtr: this.canFrameForm.rtr,
+                dlc,
+                data: dataBytes.slice(0, dlc),
+            };
+
+            const formData = new FormData();
+            formData.append('data', JSON.stringify(payload));
+
+            this.sendingCanFrame = true;
+            fetch('/api/livedata/charger/can_tx', {
+                method: 'POST',
+                headers: authHeader(),
+                body: formData,
+            })
+                .then((response) => handleResponse(response, this.$emitter, this.$router))
+                .then((response) => {
+                    this.alertMessageCan = this.$t('apiresponse.' + response.code, response.param);
+                    this.alertTypeCan = response.type;
+                    this.showAlertCan = true;
+                })
+                .finally(() => {
+                    this.sendingCanFrame = false;
+                });
+        },
         getSumIrridiation(inv: Inverter): number {
             let total = 0;
             Object.keys(inv.DC).forEach((key) => {
@@ -1103,6 +1458,25 @@ export default defineComponent({
             }
             return `0x${value.toString(16).toUpperCase().padStart(4, '0')} (${value})`;
         },
+        formatCanId(id: number, ext: boolean): string {
+            const width = ext ? 8 : 3;
+            return `0x${id.toString(16).toUpperCase().padStart(width, '0')}`;
+        },
+        formatCanData(data: number[], dlc: number): string {
+            return (data || [])
+                .slice(0, dlc)
+                .map((v) => v.toString(16).toUpperCase().padStart(2, '0'))
+                .join(' ');
+        },
+        formatCanFlags(entry: CanLogEntry): string {
+            const flags: string[] = [];
+            flags.push(entry.ext ? 'EXT' : 'STD');
+            if (entry.rtr) {
+                flags.push('RTR');
+            }
+            flags.push(`DLC${entry.dlc}`);
+            return flags.join(' ');
+        },
     },
 });
 </script>
@@ -1111,5 +1485,10 @@ export default defineComponent({
 .btn-group {
     border-radius: var(--bs-border-radius);
     margin-top: 0.25rem;
+}
+
+.can-log-dialog-table {
+    max-height: 320px;
+    overflow-y: auto;
 }
 </style>

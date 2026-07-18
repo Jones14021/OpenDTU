@@ -12,8 +12,12 @@ public:
     void init();
     bool isEnabled() const;
     void appendStatusJson(JsonObject& root) const;
+    bool queueCanFrameFromJson(JsonVariantConst frameJson, String& error);
 
 private:
+    static constexpr uint8_t MAX_CAN_LOG_ENTRIES = 32;
+    static constexpr uint8_t MAX_CAN_TX_QUEUE_ENTRIES = 16;
+
     enum class NpbInitState : uint8_t {
         Disabled = 0,
         SetEepromLock,
@@ -30,14 +34,25 @@ private:
         uint8_t data[8] = { 0 };
     };
 
+    struct CanLogEntry {
+        uint32_t timestampMs = 0;
+        CanFrame frame;
+        char meaning[96] = { 0 };
+    };
+
     static void taskEntry(void* param);
     void taskLoop();
+    void updateControllerHealth();
 
     bool initializeController();
     bool setConfigMode();
     bool setNormalMode();
     bool readFrame(CanFrame& frame);
     bool sendFrame(const CanFrame& frame);
+    bool enqueueFrame(const CanFrame& frame);
+    bool dequeueFrame(CanFrame& frame);
+    void appendCanLogEntry(const CanFrame& frame);
+    String interpretFrame(const CanFrame& frame) const;
     void handleFrame(const CanFrame& frame);
     void decodeMeanwellPbn(const CanFrame& frame);
     void handleNpb450Frame(const CanFrame& frame);
@@ -67,6 +82,9 @@ private:
     void resetController();
 
     bool _enabled = false;
+    bool _configured = false;
+    bool _controllerResponsive = false;
+    bool _controllerInNormalMode = false;
     gpio_num_t _pinSck = GPIO_NUM_NC;
     gpio_num_t _pinMosi = GPIO_NUM_NC;
     gpio_num_t _pinMiso = GPIO_NUM_NC;
@@ -79,7 +97,9 @@ private:
     uint32_t _nextSetpointActionMs = 0;
     uint32_t _nextPollActionMs = 0;
     uint32_t _nextStatePublishMs = 0;
+    uint32_t _nextControllerHealthCheckMs = 0;
     uint32_t _npbInitStartMs = 0;
+    uint32_t _lastRxFrameMs = 0;
 
     uint8_t _npbAddress = 0;
     bool _npbControlEnabled = false;
@@ -112,6 +132,19 @@ private:
     uint16_t _chargerStateWord = 0;
     uint16_t _chargerAlarmWord = 0;
     uint32_t _lastStatusUpdateMs = 0;
+
+    CanFrame _txQueue[MAX_CAN_TX_QUEUE_ENTRIES];
+    uint8_t _txQueueHead = 0;
+    uint8_t _txQueueTail = 0;
+    uint8_t _txQueueCount = 0;
+    portMUX_TYPE _txQueueMux = portMUX_INITIALIZER_UNLOCKED;
+    CanFrame _pendingTxFrame;
+    bool _hasPendingTxFrame = false;
+
+    CanLogEntry _canLog[MAX_CAN_LOG_ENTRIES];
+    uint8_t _canLogHead = 0;
+    uint8_t _canLogCount = 0;
+    mutable portMUX_TYPE _canLogMux = portMUX_INITIALIZER_UNLOCKED;
 };
 
 extern MeanwellCanClass MeanwellCan;

@@ -26,6 +26,14 @@ export interface Ethernet {
     clk_mode: number;
 }
 
+export interface Can {
+    sck: number;
+    mosi: number;
+    miso: number;
+    cs: number;
+    int: number;
+}
+
 export interface Display {
     type: number;
     data: number;
@@ -44,6 +52,7 @@ export interface Device {
     links: Array<Links>;
     nrf24: Nrf24;
     cmt: Cmt2300;
+    can: Can;
     eth: Ethernet;
     display: Display;
 }

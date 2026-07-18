@@ -9,6 +9,7 @@
 #include <SPI.h>
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <cstdlib>
 #include <esp_log.h>
 #include <inttypes.h>
@@ -81,6 +82,7 @@ constexpr uint32_t NPB_VALIDATION_RETRY_MS = 1000;
 constexpr uint32_t NPB_SETPOINT_INTERVAL_MS = 1000;
 constexpr uint32_t NPB_POLL_INTERVAL_MS = 1000;
 constexpr uint32_t NPB_STATE_PUBLISH_INTERVAL_MS = 2000;
+constexpr uint32_t MCP_HEALTH_CHECK_INTERVAL_MS = 1000;
 constexpr uint32_t NPB_INIT_TIMEOUT_MS = 30000;
 
 SPIClass CanSpi(VSPI);
@@ -111,7 +113,8 @@ MeanwellCanClass MeanwellCan;
 
 void MeanwellCanClass::init()
 {
-    if (!PinMapping.isValidCanConfig()) {
+    _configured = PinMapping.isValidCanConfig();
+    if (!_configured) {
         ESP_LOGI(TAG, "CAN pin mapping not configured, service disabled");
         return;
     }
@@ -134,6 +137,8 @@ void MeanwellCanClass::init()
         ESP_LOGE(TAG, "Failed to initialize MCP2515");
         return;
     }
+    _controllerResponsive = true;
+    _controllerInNormalMode = true;
 
     const String rawCommandTopic = MqttSettings.getPrefix() + "meanwell/can/tx";
     MqttSettings.subscribe(rawCommandTopic, 0, [this](const espMqttClientTypes::MessageProperties&, const char*, const uint8_t* payload, size_t len) {
@@ -158,8 +163,8 @@ void MeanwellCanClass::init()
             frame.dlc = std::min<uint8_t>(8, doc["dlc"].as<uint8_t>());
         }
 
-        if (!sendFrame(frame)) {
-            ESP_LOGW(TAG, "Failed to send CAN frame id=0x%08" PRIx32, frame.id);
+        if (!enqueueFrame(frame)) {
+            ESP_LOGW(TAG, "CAN TX queue full, dropping MQTT frame id=0x%08" PRIx32, frame.id);
         }
     });
 
@@ -235,6 +240,7 @@ void MeanwellCanClass::init()
     _nextSetpointActionMs = 0;
     _nextPollActionMs = 0;
     _nextStatePublishMs = 0;
+    _nextControllerHealthCheckMs = 0;
 
     if (xTaskCreatePinnedToCore(taskEntry, "MeanwellCAN", 6144, this, 1, &_taskHandle, tskNO_AFFINITY) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create CAN task");
@@ -250,10 +256,77 @@ bool MeanwellCanClass::isEnabled() const
     return _enabled;
 }
 
+bool MeanwellCanClass::queueCanFrameFromJson(JsonVariantConst frameJson, String& error)
+{
+    if (!_enabled) {
+        error = "CAN service is not enabled";
+        return false;
+    }
+
+    if (!frameJson.is<JsonObjectConst>() || !frameJson["id"].is<uint32_t>()) {
+        error = "Frame ID is missing or invalid";
+        return false;
+    }
+
+    CanFrame frame;
+    frame.id = frameJson["id"].as<uint32_t>();
+    frame.isExtended = frameJson["ext"] | false;
+    frame.isRemoteRequest = frameJson["rtr"] | false;
+
+    if (frame.id > (frame.isExtended ? 0x1FFFFFFFU : 0x7FFU)) {
+        error = "Frame ID out of range for selected frame format";
+        return false;
+    }
+
+    JsonArrayConst data = frameJson["data"].as<JsonArrayConst>();
+    uint8_t dlc = data.isNull() ? 0 : static_cast<uint8_t>(std::min<size_t>(8, data.size()));
+
+    if (frameJson["dlc"].is<uint8_t>()) {
+        dlc = std::min<uint8_t>(8, frameJson["dlc"].as<uint8_t>());
+    }
+
+    frame.dlc = dlc;
+    memset(frame.data, 0, sizeof(frame.data));
+
+    if (!frame.isRemoteRequest && !data.isNull()) {
+        for (uint8_t i = 0; i < std::min<uint8_t>(dlc, static_cast<uint8_t>(data.size())); i++) {
+            if (!data[i].is<uint8_t>()) {
+                error = "Frame data bytes must be in range 0..255";
+                return false;
+            }
+            frame.data[i] = data[i].as<uint8_t>();
+        }
+    }
+
+    if (!enqueueFrame(frame)) {
+        error = "CAN TX queue full";
+        return false;
+    }
+
+    return true;
+}
+
 void MeanwellCanClass::appendStatusJson(JsonObject& root) const
 {
+    root["configured"] = _configured;
     root["enabled"] = _enabled;
     root["data_age_ms"] = _lastStatusUpdateMs > 0 ? millis() - _lastStatusUpdateMs : -1;
+
+    auto mcpObj = root["mcp2515"].to<JsonObject>();
+    mcpObj["configured"] = _configured;
+    mcpObj["enabled"] = _enabled;
+    mcpObj["responding"] = _controllerResponsive;
+    mcpObj["mode_normal"] = _controllerInNormalMode;
+    mcpObj["active"] = _configured && _enabled && _controllerResponsive && _controllerInNormalMode;
+    mcpObj["rx_seen"] = _lastRxFrameMs > 0;
+    mcpObj["rx_age_ms"] = _lastRxFrameMs > 0 ? millis() - _lastRxFrameMs : -1;
+    mcpObj["tx_queue_depth"] = _txQueueCount + (_hasPendingTxFrame ? 1 : 0);
+    auto mcpPinObj = mcpObj["pinout"].to<JsonObject>();
+    mcpPinObj["sck"] = _pinSck;
+    mcpPinObj["mosi"] = _pinMosi;
+    mcpPinObj["miso"] = _pinMiso;
+    mcpPinObj["cs"] = _pinCs;
+    mcpPinObj["int"] = _pinInt;
 
     auto npbObj = root["npb450"].to<JsonObject>();
     String initState = "disabled";
@@ -312,6 +385,27 @@ void MeanwellCanClass::appendStatusJson(JsonObject& root) const
     batteryObj["voltage_v"] = _batteryVoltage;
     batteryObj["current_a"] = _batteryCurrent;
     batteryObj["power_w"] = _batteryPower;
+
+    JsonArray canLogObj = root["can_log"].to<JsonArray>();
+    portENTER_CRITICAL(&_canLogMux);
+    const uint8_t canLogCount = _canLogCount;
+    const uint8_t canLogHead = _canLogHead;
+    for (uint8_t i = 0; i < canLogCount; i++) {
+        const uint8_t index = (canLogHead + MAX_CAN_LOG_ENTRIES - canLogCount + i) % MAX_CAN_LOG_ENTRIES;
+        const auto& entry = _canLog[index];
+        auto row = canLogObj.add<JsonObject>();
+        row["timestamp_ms"] = entry.timestampMs;
+        row["id"] = entry.frame.id;
+        row["ext"] = entry.frame.isExtended;
+        row["rtr"] = entry.frame.isRemoteRequest;
+        row["dlc"] = entry.frame.dlc;
+        auto data = row["data"].to<JsonArray>();
+        for (uint8_t j = 0; j < entry.frame.dlc; j++) {
+            data.add(entry.frame.data[j]);
+        }
+        row["meaning"] = entry.meaning;
+    }
+    portEXIT_CRITICAL(&_canLogMux);
 }
 
 void MeanwellCanClass::taskEntry(void* param)
@@ -322,6 +416,20 @@ void MeanwellCanClass::taskEntry(void* param)
 void MeanwellCanClass::taskLoop()
 {
     for (;;) {
+        if (_hasPendingTxFrame) {
+            if (sendFrame(_pendingTxFrame)) {
+                _hasPendingTxFrame = false;
+            }
+        } else {
+            CanFrame txFrame;
+            if (dequeueFrame(txFrame)) {
+                if (!sendFrame(txFrame)) {
+                    _pendingTxFrame = txFrame;
+                    _hasPendingTxFrame = true;
+                }
+            }
+        }
+
         uint8_t processed = 0;
         while (processed < MAX_FRAMES_PER_CYCLE) {
             CanFrame frame;
@@ -334,12 +442,58 @@ void MeanwellCanClass::taskLoop()
 
         runNpb450StateMachine();
 
+        if (millis() >= _nextControllerHealthCheckMs) {
+            updateControllerHealth();
+            _nextControllerHealthCheckMs = millis() + MCP_HEALTH_CHECK_INTERVAL_MS;
+        }
+
         if (processed == 0) {
             vTaskDelay(pdMS_TO_TICKS(RX_IDLE_DELAY_MS));
         } else {
             vTaskDelay(pdMS_TO_TICKS(RX_ACTIVE_DELAY_MS));
         }
     }
+}
+
+void MeanwellCanClass::updateControllerHealth()
+{
+    if (!_enabled) {
+        _controllerResponsive = false;
+        _controllerInNormalMode = false;
+        return;
+    }
+
+    const uint8_t canStat = readRegister(REG_CANSTAT);
+    _controllerResponsive = canStat != 0xFF;
+    _controllerInNormalMode = _controllerResponsive && ((canStat & CANCTRL_MODE_MASK) == CANCTRL_MODE_NORMAL);
+}
+
+bool MeanwellCanClass::enqueueFrame(const CanFrame& frame)
+{
+    bool queued = false;
+    portENTER_CRITICAL(&_txQueueMux);
+    if (_txQueueCount < MAX_CAN_TX_QUEUE_ENTRIES) {
+        _txQueue[_txQueueTail] = frame;
+        _txQueueTail = (_txQueueTail + 1) % MAX_CAN_TX_QUEUE_ENTRIES;
+        _txQueueCount++;
+        queued = true;
+    }
+    portEXIT_CRITICAL(&_txQueueMux);
+    return queued;
+}
+
+bool MeanwellCanClass::dequeueFrame(CanFrame& frame)
+{
+    bool dequeued = false;
+    portENTER_CRITICAL(&_txQueueMux);
+    if (_txQueueCount > 0) {
+        frame = _txQueue[_txQueueHead];
+        _txQueueHead = (_txQueueHead + 1) % MAX_CAN_TX_QUEUE_ENTRIES;
+        _txQueueCount--;
+        dequeued = true;
+    }
+    portEXIT_CRITICAL(&_txQueueMux);
+    return dequeued;
 }
 
 void MeanwellCanClass::runNpb450StateMachine()
@@ -500,6 +654,7 @@ bool MeanwellCanClass::readFrame(CanFrame& frame)
     memcpy(frame.data, &header[5], frame.dlc);
 
     bitModify(REG_CANINTF, clearMask, 0x00);
+    _lastRxFrameMs = millis();
     return true;
 }
 
@@ -609,8 +764,60 @@ void MeanwellCanClass::handleFrame(const CanFrame& frame)
         MqttSettings.publish("meanwell/can/rx", payload);
     }
 
+    appendCanLogEntry(frame);
     handleNpb450Frame(frame);
     decodeMeanwellPbn(frame);
+}
+
+void MeanwellCanClass::appendCanLogEntry(const CanFrame& frame)
+{
+    CanLogEntry entry;
+    entry.timestampMs = millis();
+    entry.frame = frame;
+    const String meaning = interpretFrame(frame);
+    meaning.toCharArray(entry.meaning, sizeof(entry.meaning));
+
+    portENTER_CRITICAL(&_canLogMux);
+    _canLog[_canLogHead] = entry;
+    _canLogHead = (_canLogHead + 1) % MAX_CAN_LOG_ENTRIES;
+    if (_canLogCount < MAX_CAN_LOG_ENTRIES) {
+        _canLogCount++;
+    }
+    portEXIT_CRITICAL(&_canLogMux);
+}
+
+String MeanwellCanClass::interpretFrame(const CanFrame& frame) const
+{
+    if (!frame.isExtended) {
+        switch (frame.id) {
+        case 0x305:
+            return "PBN charger output voltage/current";
+        case 0x306:
+            return "PBN battery voltage/current";
+        case 0x307:
+            return "PBN charger temperature/state word";
+        case 0x30A:
+            return "PBN charger alarm word";
+        default:
+            return "Unknown standard CAN frame";
+        }
+    }
+
+    if (frame.id == getNpb450ChargerToControllerId() && frame.dlc >= 4) {
+        const uint16_t command = static_cast<uint16_t>(frame.data[0]) | (static_cast<uint16_t>(frame.data[1]) << 8);
+        switch (command) {
+        case NPB_CMD_SYSTEM_STATUS:
+            return "NPB450 system status response";
+        case NPB_CMD_SYSTEM_CONFIG:
+            return "NPB450 system config response";
+        case NPB_CMD_READ_IOUT:
+            return "NPB450 output current response";
+        default:
+            return "NPB450 extended response";
+        }
+    }
+
+    return "Unknown extended CAN frame";
 }
 
 void MeanwellCanClass::handleNpb450Frame(const CanFrame& frame)

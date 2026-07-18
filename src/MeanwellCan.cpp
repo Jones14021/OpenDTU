@@ -7,6 +7,7 @@
 #include "PinMapping.h"
 #include <ArduinoJson.h>
 #include <SPI.h>
+#include <SpiManager.h>
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -85,8 +86,6 @@ constexpr uint32_t NPB_STATE_PUBLISH_INTERVAL_MS = 2000;
 constexpr uint32_t MCP_HEALTH_CHECK_INTERVAL_MS = 1000;
 constexpr uint32_t NPB_INIT_TIMEOUT_MS = 30000;
 
-SPIClass CanSpi(VSPI);
-
 uint16_t readU16Be(const uint8_t* data)
 {
     return (static_cast<uint16_t>(data[0]) << 8) | data[1];
@@ -132,7 +131,13 @@ void MeanwellCanClass::init()
         pinMode(_pinInt, INPUT_PULLUP);
     }
 
-    CanSpi.begin(_pinSck, _pinMiso, _pinMosi, _pinCs);
+    auto spi_bus = SpiManagerInst.claim_bus_arduino();
+    if (!spi_bus) {
+        ESP_LOGE(TAG, "No free SPI host available for MCP2515");
+        return;
+    }
+    _spi = new SPIClass(*spi_bus);
+    _spi->begin(_pinSck, _pinMiso, _pinMosi, _pinCs);
     if (!initializeController()) {
         ESP_LOGE(TAG, "Failed to initialize MCP2515");
         return;
@@ -686,11 +691,11 @@ bool MeanwellCanClass::sendFrame(const CanFrame& frame)
 
     writeRegisters(REG_TXB0SIDH, header, sizeof(header));
 
-    CanSpi.beginTransaction(SPISettings(10000000, MSBFIRST, SPI_MODE0));
+    _spi->beginTransaction(SPISettings(10000000, MSBFIRST, SPI_MODE0));
     digitalWrite(_pinCs, LOW);
-    CanSpi.transfer(MCP_RTS_TXB0);
+    _spi->transfer(MCP_RTS_TXB0);
     digitalWrite(_pinCs, HIGH);
-    CanSpi.endTransaction();
+    _spi->endTransaction();
 
     return true;
 }
@@ -1020,82 +1025,82 @@ void MeanwellCanClass::publishMetric(const String& topic, float value, const uin
 uint8_t MeanwellCanClass::readRegister(uint8_t address)
 {
     uint8_t value = 0;
-    CanSpi.beginTransaction(SPISettings(10000000, MSBFIRST, SPI_MODE0));
+    _spi->beginTransaction(SPISettings(10000000, MSBFIRST, SPI_MODE0));
     digitalWrite(_pinCs, LOW);
-    CanSpi.transfer(MCP_READ);
-    CanSpi.transfer(address);
-    value = CanSpi.transfer(0x00);
+    _spi->transfer(MCP_READ);
+    _spi->transfer(address);
+    value = _spi->transfer(0x00);
     digitalWrite(_pinCs, HIGH);
-    CanSpi.endTransaction();
+    _spi->endTransaction();
     return value;
 }
 
 void MeanwellCanClass::writeRegister(uint8_t address, uint8_t value)
 {
-    CanSpi.beginTransaction(SPISettings(10000000, MSBFIRST, SPI_MODE0));
+    _spi->beginTransaction(SPISettings(10000000, MSBFIRST, SPI_MODE0));
     digitalWrite(_pinCs, LOW);
-    CanSpi.transfer(MCP_WRITE);
-    CanSpi.transfer(address);
-    CanSpi.transfer(value);
+    _spi->transfer(MCP_WRITE);
+    _spi->transfer(address);
+    _spi->transfer(value);
     digitalWrite(_pinCs, HIGH);
-    CanSpi.endTransaction();
+    _spi->endTransaction();
 }
 
 void MeanwellCanClass::readRegisters(uint8_t address, uint8_t* data, size_t len)
 {
-    CanSpi.beginTransaction(SPISettings(10000000, MSBFIRST, SPI_MODE0));
+    _spi->beginTransaction(SPISettings(10000000, MSBFIRST, SPI_MODE0));
     digitalWrite(_pinCs, LOW);
-    CanSpi.transfer(MCP_READ);
-    CanSpi.transfer(address);
+    _spi->transfer(MCP_READ);
+    _spi->transfer(address);
     for (size_t i = 0; i < len; i++) {
-        data[i] = CanSpi.transfer(0x00);
+        data[i] = _spi->transfer(0x00);
     }
     digitalWrite(_pinCs, HIGH);
-    CanSpi.endTransaction();
+    _spi->endTransaction();
 }
 
 void MeanwellCanClass::writeRegisters(uint8_t address, const uint8_t* data, size_t len)
 {
-    CanSpi.beginTransaction(SPISettings(10000000, MSBFIRST, SPI_MODE0));
+    _spi->beginTransaction(SPISettings(10000000, MSBFIRST, SPI_MODE0));
     digitalWrite(_pinCs, LOW);
-    CanSpi.transfer(MCP_WRITE);
-    CanSpi.transfer(address);
+    _spi->transfer(MCP_WRITE);
+    _spi->transfer(address);
     for (size_t i = 0; i < len; i++) {
-        CanSpi.transfer(data[i]);
+        _spi->transfer(data[i]);
     }
     digitalWrite(_pinCs, HIGH);
-    CanSpi.endTransaction();
+    _spi->endTransaction();
 }
 
 void MeanwellCanClass::bitModify(uint8_t address, uint8_t mask, uint8_t data)
 {
-    CanSpi.beginTransaction(SPISettings(10000000, MSBFIRST, SPI_MODE0));
+    _spi->beginTransaction(SPISettings(10000000, MSBFIRST, SPI_MODE0));
     digitalWrite(_pinCs, LOW);
-    CanSpi.transfer(MCP_BIT_MODIFY);
-    CanSpi.transfer(address);
-    CanSpi.transfer(mask);
-    CanSpi.transfer(data);
+    _spi->transfer(MCP_BIT_MODIFY);
+    _spi->transfer(address);
+    _spi->transfer(mask);
+    _spi->transfer(data);
     digitalWrite(_pinCs, HIGH);
-    CanSpi.endTransaction();
+    _spi->endTransaction();
 }
 
 uint8_t MeanwellCanClass::readStatus()
 {
     uint8_t value = 0;
-    CanSpi.beginTransaction(SPISettings(10000000, MSBFIRST, SPI_MODE0));
+    _spi->beginTransaction(SPISettings(10000000, MSBFIRST, SPI_MODE0));
     digitalWrite(_pinCs, LOW);
-    CanSpi.transfer(MCP_READ_STATUS);
-    value = CanSpi.transfer(0x00);
+    _spi->transfer(MCP_READ_STATUS);
+    value = _spi->transfer(0x00);
     digitalWrite(_pinCs, HIGH);
-    CanSpi.endTransaction();
+    _spi->endTransaction();
     return value;
 }
 
 void MeanwellCanClass::resetController()
 {
-    CanSpi.beginTransaction(SPISettings(10000000, MSBFIRST, SPI_MODE0));
+    _spi->beginTransaction(SPISettings(10000000, MSBFIRST, SPI_MODE0));
     digitalWrite(_pinCs, LOW);
-    CanSpi.transfer(MCP_RESET);
+    _spi->transfer(MCP_RESET);
     digitalWrite(_pinCs, HIGH);
-    CanSpi.endTransaction();
+    _spi->endTransaction();
 }

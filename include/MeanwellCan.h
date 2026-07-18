@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <SPI.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <hal/gpio_types.h>
@@ -90,6 +91,7 @@ private:
     gpio_num_t _pinMiso = GPIO_NUM_NC;
     gpio_num_t _pinCs = GPIO_NUM_NC;
     gpio_num_t _pinInt = GPIO_NUM_NC;
+    SPIClass* _spi = nullptr;
     TaskHandle_t _taskHandle = nullptr;
 
     NpbInitState _npbInitState = NpbInitState::Disabled;

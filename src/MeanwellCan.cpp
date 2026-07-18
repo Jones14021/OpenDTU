@@ -8,6 +8,8 @@
 #include <ArduinoJson.h>
 #include <SPI.h>
 #include <algorithm>
+#include <cmath>
+#include <cstdlib>
 #include <esp_log.h>
 #include <inttypes.h>
 
@@ -58,6 +60,29 @@ constexpr uint8_t MAX_FRAMES_PER_CYCLE = 16;
 constexpr uint32_t RX_IDLE_DELAY_MS = 10;
 constexpr uint32_t RX_ACTIVE_DELAY_MS = 1;
 
+constexpr uint16_t NPB_CMD_OPERATION = 0x0000;
+constexpr uint16_t NPB_CMD_VOUT_SET = 0x0020;
+constexpr uint16_t NPB_CMD_IOUT_SET = 0x0030;
+constexpr uint16_t NPB_CMD_READ_IOUT = 0x0061;
+constexpr uint16_t NPB_CMD_CURVE_CONFIG = 0x00B4;
+constexpr uint16_t NPB_CMD_SYSTEM_STATUS = 0x00C1;
+constexpr uint16_t NPB_CMD_SYSTEM_CONFIG = 0x00C2;
+
+constexpr uint16_t NPB_DATA_OPERATION_ON = 0x0001;
+constexpr uint16_t NPB_DATA_OPERATION_OFF = 0x0000;
+constexpr uint16_t NPB_DATA_CURVE_CONFIG_PSU = 0x0004;
+constexpr uint16_t NPB_DATA_SYSTEM_CONFIG_EEPOFF = 0x0400;
+
+constexpr uint32_t NPB_BASE_CONTROLLER_TO_CHARGER = 0x000C0100;
+constexpr uint32_t NPB_BASE_CHARGER_TO_CONTROLLER = 0x000C0000;
+
+constexpr uint32_t NPB_INIT_RETRY_MS = 1000;
+constexpr uint32_t NPB_VALIDATION_RETRY_MS = 1000;
+constexpr uint32_t NPB_SETPOINT_INTERVAL_MS = 1000;
+constexpr uint32_t NPB_POLL_INTERVAL_MS = 1000;
+constexpr uint32_t NPB_STATE_PUBLISH_INTERVAL_MS = 2000;
+constexpr uint32_t NPB_INIT_TIMEOUT_MS = 30000;
+
 SPIClass CanSpi(VSPI);
 
 uint16_t readU16Be(const uint8_t* data)
@@ -68,6 +93,17 @@ uint16_t readU16Be(const uint8_t* data)
 int16_t readS16Be(const uint8_t* data)
 {
     return static_cast<int16_t>(readU16Be(data));
+}
+
+String payloadToString(const uint8_t* payload, size_t len)
+{
+    String value;
+    value.reserve(len);
+    for (size_t i = 0; i < len; i++) {
+        value += static_cast<char>(payload[i]);
+    }
+    value.trim();
+    return value;
 }
 } // namespace
 
@@ -99,8 +135,8 @@ void MeanwellCanClass::init()
         return;
     }
 
-    const String commandTopic = MqttSettings.getPrefix() + "meanwell/can/tx";
-    MqttSettings.subscribe(commandTopic, 0, [this](const espMqttClientTypes::MessageProperties&, const char*, const uint8_t* payload, size_t len) {
+    const String rawCommandTopic = MqttSettings.getPrefix() + "meanwell/can/tx";
+    MqttSettings.subscribe(rawCommandTopic, 0, [this](const espMqttClientTypes::MessageProperties&, const char*, const uint8_t* payload, size_t len) {
         JsonDocument doc;
         if (deserializeJson(doc, payload, len) != DeserializationError::Ok) {
             ESP_LOGW(TAG, "Ignoring invalid meanwell/can/tx payload");
@@ -127,7 +163,80 @@ void MeanwellCanClass::init()
         }
     });
 
-    if (xTaskCreatePinnedToCore(taskEntry, "MeanwellCAN", 4096, this, 1, &_taskHandle, tskNO_AFFINITY) != pdPASS) {
+    const String abstractEnableTopic = MqttSettings.getPrefix() + "meanwell/npb450/control/enable";
+    MqttSettings.subscribe(abstractEnableTopic, 0, [this](const espMqttClientTypes::MessageProperties&, const char*, const uint8_t* payload, size_t len) {
+        bool enabled = false;
+        if (!parseBoolPayload(payloadToString(payload, len), enabled)) {
+            ESP_LOGW(TAG, "Ignoring invalid meanwell/npb450/control/enable payload");
+            return;
+        }
+        _npbControlEnabled = enabled;
+    });
+
+    const String abstractTargetWattsTopic = MqttSettings.getPrefix() + "meanwell/npb450/control/target_w";
+    MqttSettings.subscribe(abstractTargetWattsTopic, 0, [this](const espMqttClientTypes::MessageProperties&, const char*, const uint8_t* payload, size_t len) {
+        float watts = 0.0f;
+        if (!parseFloatPayload(payloadToString(payload, len), watts)) {
+            ESP_LOGW(TAG, "Ignoring invalid meanwell/npb450/control/target_w payload");
+            return;
+        }
+        _npbTargetWatts = std::max(0.0f, watts);
+    });
+
+    const String abstractConfigVoltageTopic = MqttSettings.getPrefix() + "meanwell/npb450/config/charge_voltage_v";
+    MqttSettings.subscribe(abstractConfigVoltageTopic, 0, [this](const espMqttClientTypes::MessageProperties&, const char*, const uint8_t* payload, size_t len) {
+        float voltage = 0.0f;
+        if (!parseFloatPayload(payloadToString(payload, len), voltage)) {
+            ESP_LOGW(TAG, "Ignoring invalid meanwell/npb450/config/charge_voltage_v payload");
+            return;
+        }
+        _npbChargeVoltage = std::clamp(voltage, 0.0f, 60.0f);
+    });
+
+    const String abstractConfigMaxCurrentTopic = MqttSettings.getPrefix() + "meanwell/npb450/config/max_current_a";
+    MqttSettings.subscribe(abstractConfigMaxCurrentTopic, 0, [this](const espMqttClientTypes::MessageProperties&, const char*, const uint8_t* payload, size_t len) {
+        float current = 0.0f;
+        if (!parseFloatPayload(payloadToString(payload, len), current)) {
+            ESP_LOGW(TAG, "Ignoring invalid meanwell/npb450/config/max_current_a payload");
+            return;
+        }
+        _npbMaxCurrent = std::clamp(current, 0.0f, 100.0f);
+    });
+
+    const String abstractConfigAddressTopic = MqttSettings.getPrefix() + "meanwell/npb450/config/address";
+    MqttSettings.subscribe(abstractConfigAddressTopic, 0, [this](const espMqttClientTypes::MessageProperties&, const char*, const uint8_t* payload, size_t len) {
+        float address = 0.0f;
+        if (!parseFloatPayload(payloadToString(payload, len), address)) {
+            ESP_LOGW(TAG, "Ignoring invalid meanwell/npb450/config/address payload");
+            return;
+        }
+        _npbAddress = static_cast<uint8_t>(std::clamp(address, 0.0f, 15.0f));
+    });
+
+    const String abstractCommissionTopic = MqttSettings.getPrefix() + "meanwell/npb450/control/commission_psu";
+    MqttSettings.subscribe(abstractCommissionTopic, 0, [this](const espMqttClientTypes::MessageProperties&, const char*, const uint8_t* payload, size_t len) {
+        bool enableCommissioning = false;
+        if (!parseBoolPayload(payloadToString(payload, len), enableCommissioning)) {
+            ESP_LOGW(TAG, "Ignoring invalid meanwell/npb450/control/commission_psu payload");
+            return;
+        }
+        _npbCommissioningAllowed = enableCommissioning;
+        if (_npbCommissioningAllowed) {
+            if (!sendNpb450Command(NPB_CMD_CURVE_CONFIG, NPB_DATA_CURVE_CONFIG_PSU)) {
+                ESP_LOGW(TAG, "Failed to send PSU commissioning command");
+            }
+            _npbCommissioningAllowed = false;
+        }
+    });
+
+    _npbInitState = NpbInitState::SetEepromLock;
+    _npbInitStartMs = millis();
+    _nextInitActionMs = 0;
+    _nextSetpointActionMs = 0;
+    _nextPollActionMs = 0;
+    _nextStatePublishMs = 0;
+
+    if (xTaskCreatePinnedToCore(taskEntry, "MeanwellCAN", 6144, this, 1, &_taskHandle, tskNO_AFFINITY) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create CAN task");
         return;
     }
@@ -159,10 +268,82 @@ void MeanwellCanClass::taskLoop()
             processed++;
         }
 
+        runNpb450StateMachine();
+
         if (processed == 0) {
             vTaskDelay(pdMS_TO_TICKS(RX_IDLE_DELAY_MS));
         } else {
             vTaskDelay(pdMS_TO_TICKS(RX_ACTIVE_DELAY_MS));
+        }
+    }
+}
+
+void MeanwellCanClass::runNpb450StateMachine()
+{
+    const uint32_t now = millis();
+
+    if (now >= _nextStatePublishMs) {
+        publishNpb450State();
+        _nextStatePublishMs = now + NPB_STATE_PUBLISH_INTERVAL_MS;
+    }
+
+    if (_npbInitState == NpbInitState::Fault || _npbInitState == NpbInitState::Disabled) {
+        return;
+    }
+
+    if ((now - _npbInitStartMs) > NPB_INIT_TIMEOUT_MS && _npbInitState != NpbInitState::Ready) {
+        _npbInitState = NpbInitState::Fault;
+        return;
+    }
+
+    if (_npbInitState == NpbInitState::SetEepromLock) {
+        if (now < _nextInitActionMs) {
+            return;
+        }
+
+        if (setNpb450EepromLock()) {
+            _npbInitState = NpbInitState::RequestValidation;
+            _nextInitActionMs = now;
+        } else {
+            _nextInitActionMs = now + NPB_INIT_RETRY_MS;
+        }
+        return;
+    }
+
+    if (_npbInitState == NpbInitState::RequestValidation) {
+        if (now >= _nextInitActionMs) {
+            bool requestOk = true;
+            requestOk &= requestNpb450Register(NPB_CMD_SYSTEM_STATUS);
+            requestOk &= requestNpb450Register(NPB_CMD_SYSTEM_CONFIG);
+            requestOk &= requestNpb450Register(NPB_CMD_READ_IOUT);
+
+            if (!requestOk) {
+                _nextInitActionMs = now + NPB_VALIDATION_RETRY_MS;
+                return;
+            }
+
+            _nextInitActionMs = now + NPB_VALIDATION_RETRY_MS;
+        }
+
+        if (_npbValidationSeen && _npbPsuModeOk && _npbEepromLockOk) {
+            _npbInitState = NpbInitState::Ready;
+            _nextSetpointActionMs = now;
+            _nextPollActionMs = now;
+        }
+        return;
+    }
+
+    if (_npbInitState == NpbInitState::Ready) {
+        if (now >= _nextPollActionMs) {
+            requestNpb450Register(NPB_CMD_SYSTEM_STATUS);
+            requestNpb450Register(NPB_CMD_SYSTEM_CONFIG);
+            requestNpb450Register(NPB_CMD_READ_IOUT);
+            _nextPollActionMs = now + NPB_POLL_INTERVAL_MS;
+        }
+
+        if (now >= _nextSetpointActionMs) {
+            applyNpb450Setpoints();
+            _nextSetpointActionMs = now + NPB_SETPOINT_INTERVAL_MS;
         }
     }
 }
@@ -295,28 +476,116 @@ bool MeanwellCanClass::sendFrame(const CanFrame& frame)
     return true;
 }
 
+bool MeanwellCanClass::sendNpb450Command(uint16_t command, uint16_t data)
+{
+    CanFrame frame;
+    frame.id = getNpb450ControllerId();
+    frame.isExtended = true;
+    frame.isRemoteRequest = false;
+    frame.dlc = 4;
+    frame.data[0] = static_cast<uint8_t>(command & 0xFF);
+    frame.data[1] = static_cast<uint8_t>((command >> 8) & 0xFF);
+    frame.data[2] = static_cast<uint8_t>(data & 0xFF);
+    frame.data[3] = static_cast<uint8_t>((data >> 8) & 0xFF);
+    return sendFrame(frame);
+}
+
+bool MeanwellCanClass::requestNpb450Register(uint16_t command)
+{
+    return sendNpb450Command(command, 0x0000);
+}
+
+bool MeanwellCanClass::setNpb450EepromLock()
+{
+    return sendNpb450Command(NPB_CMD_SYSTEM_CONFIG, NPB_DATA_SYSTEM_CONFIG_EEPOFF);
+}
+
+bool MeanwellCanClass::applyNpb450Setpoints()
+{
+    if (!_npbControlEnabled || _npbTargetWatts <= 0.0f) {
+        return sendNpb450Command(NPB_CMD_OPERATION, NPB_DATA_OPERATION_OFF);
+    }
+
+    const float targetCurrent = getTargetCurrentFromPower();
+    const uint16_t currentScaled = static_cast<uint16_t>(std::clamp(targetCurrent * 100.0f, 0.0f, 65535.0f));
+    const uint16_t voltageScaled = static_cast<uint16_t>(std::clamp(_npbChargeVoltage * 100.0f, 0.0f, 65535.0f));
+
+    bool ok = true;
+    ok &= sendNpb450Command(NPB_CMD_VOUT_SET, voltageScaled);
+    ok &= sendNpb450Command(NPB_CMD_IOUT_SET, currentScaled);
+    ok &= sendNpb450Command(NPB_CMD_OPERATION, NPB_DATA_OPERATION_ON);
+
+    return ok;
+}
+
+float MeanwellCanClass::getTargetCurrentFromPower()
+{
+    if (_npbChargeVoltage <= 0.0f) {
+        return 0.0f;
+    }
+    return std::clamp(_npbTargetWatts / _npbChargeVoltage, 0.0f, _npbMaxCurrent);
+}
+
 void MeanwellCanClass::handleFrame(const CanFrame& frame)
 {
-    if (!MqttSettings.getConnected()) {
+    if (MqttSettings.getConnected()) {
+        JsonDocument doc;
+        doc["id"] = frame.id;
+        doc["ext"] = frame.isExtended;
+        doc["rtr"] = frame.isRemoteRequest;
+        doc["dlc"] = frame.dlc;
+
+        JsonArray data = doc["data"].to<JsonArray>();
+        for (uint8_t i = 0; i < frame.dlc; i++) {
+            data.add(frame.data[i]);
+        }
+
+        String payload;
+        serializeJson(doc, payload);
+        MqttSettings.publish("meanwell/can/rx", payload);
+    }
+
+    handleNpb450Frame(frame);
+    decodeMeanwellPbn(frame);
+}
+
+void MeanwellCanClass::handleNpb450Frame(const CanFrame& frame)
+{
+    if (!frame.isExtended || frame.dlc < 4) {
         return;
     }
 
-    JsonDocument doc;
-    doc["id"] = frame.id;
-    doc["ext"] = frame.isExtended;
-    doc["rtr"] = frame.isRemoteRequest;
-    doc["dlc"] = frame.dlc;
-
-    JsonArray data = doc["data"].to<JsonArray>();
-    for (uint8_t i = 0; i < frame.dlc; i++) {
-        data.add(frame.data[i]);
+    if (frame.id != getNpb450ChargerToControllerId()) {
+        return;
     }
 
-    String payload;
-    serializeJson(doc, payload);
-    MqttSettings.publish("meanwell/can/rx", payload);
+    const uint16_t command = static_cast<uint16_t>(frame.data[0]) | (static_cast<uint16_t>(frame.data[1]) << 8);
+    const uint16_t value = static_cast<uint16_t>(frame.data[2]) | (static_cast<uint16_t>(frame.data[3]) << 8);
 
-    decodeMeanwellPbn(frame);
+    switch (command) {
+    case NPB_CMD_SYSTEM_STATUS:
+        _npbPsuModeOk = (value & 0x8000U) == 0;
+        _npbValidationSeen = true;
+        if (MqttSettings.getConnected()) {
+            MqttSettings.publish("meanwell/npb450/status/system_status", String(value));
+            MqttSettings.publish("meanwell/npb450/status/psu_mode_ok", _npbPsuModeOk ? "1" : "0");
+        }
+        break;
+    case NPB_CMD_SYSTEM_CONFIG:
+        _npbEepromLockOk = (value & NPB_DATA_SYSTEM_CONFIG_EEPOFF) != 0;
+        _npbValidationSeen = true;
+        if (MqttSettings.getConnected()) {
+            MqttSettings.publish("meanwell/npb450/status/system_config", String(value));
+            MqttSettings.publish("meanwell/npb450/status/eeprom_lock_ok", _npbEepromLockOk ? "1" : "0");
+        }
+        break;
+    case NPB_CMD_READ_IOUT:
+        _npbMeasuredCurrent = static_cast<float>(value) / 100.0f;
+        publishMetric("meanwell/npb450/status/iout_actual", _npbMeasuredCurrent, 2);
+        break;
+    default:
+        break;
+    }
 }
 
 void MeanwellCanClass::decodeMeanwellPbn(const CanFrame& frame)
@@ -359,8 +628,95 @@ void MeanwellCanClass::decodeMeanwellPbn(const CanFrame& frame)
     }
 }
 
+void MeanwellCanClass::publishNpb450State()
+{
+    if (!MqttSettings.getConnected()) {
+        return;
+    }
+
+    String initState = "disabled";
+    switch (_npbInitState) {
+    case NpbInitState::Disabled:
+        initState = "disabled";
+        break;
+    case NpbInitState::SetEepromLock:
+        initState = "set_eeprom_lock";
+        break;
+    case NpbInitState::RequestValidation:
+        initState = "request_validation";
+        break;
+    case NpbInitState::Ready:
+        initState = "ready";
+        break;
+    case NpbInitState::Fault:
+        initState = "fault";
+        break;
+    }
+
+    MqttSettings.publish("meanwell/npb450/status/init_state", initState);
+    MqttSettings.publish("meanwell/npb450/status/control_enabled", _npbControlEnabled ? "1" : "0");
+    publishMetric("meanwell/npb450/status/target_w", _npbTargetWatts, 1);
+    publishMetric("meanwell/npb450/status/target_iout", getTargetCurrentFromPower(), 2);
+    publishMetric("meanwell/npb450/status/target_vout", _npbChargeVoltage, 2);
+    MqttSettings.publish("meanwell/npb450/status/psu_mode_ok", _npbPsuModeOk ? "1" : "0");
+    MqttSettings.publish("meanwell/npb450/status/eeprom_lock_ok", _npbEepromLockOk ? "1" : "0");
+    MqttSettings.publish("meanwell/npb450/status/address", String(_npbAddress));
+}
+
+bool MeanwellCanClass::parseBoolPayload(const String& payload, bool& out)
+{
+    String value = payload;
+    value.trim();
+    value.toLowerCase();
+
+    if (value == "1" || value == "true" || value == "on") {
+        out = true;
+        return true;
+    }
+
+    if (value == "0" || value == "false" || value == "off") {
+        out = false;
+        return true;
+    }
+
+    return false;
+}
+
+bool MeanwellCanClass::parseFloatPayload(const String& payload, float& out)
+{
+    String value = payload;
+    value.trim();
+    if (value.isEmpty()) {
+        return false;
+    }
+
+    char buffer[32] = { 0 };
+    value.toCharArray(buffer, sizeof(buffer));
+    char* endPtr = nullptr;
+    const float parsed = std::strtof(buffer, &endPtr);
+    if (endPtr == buffer || !std::isfinite(parsed)) {
+        return false;
+    }
+
+    out = parsed;
+    return true;
+}
+
+uint32_t MeanwellCanClass::getNpb450ControllerId() const
+{
+    return NPB_BASE_CONTROLLER_TO_CHARGER + _npbAddress;
+}
+
+uint32_t MeanwellCanClass::getNpb450ChargerToControllerId() const
+{
+    return NPB_BASE_CHARGER_TO_CONTROLLER + _npbAddress;
+}
+
 void MeanwellCanClass::publishMetric(const String& topic, float value, const uint8_t decimals)
 {
+    if (!MqttSettings.getConnected()) {
+        return;
+    }
     MqttSettings.publish(topic, String(value, static_cast<unsigned int>(decimals)));
 }
 

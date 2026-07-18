@@ -1,18 +1,17 @@
-# NPB-450 Zero Export Example
+# NPB-450 Integration Examples
 
-This folder contains a complete example stack for your setup:
+This folder contains practical examples for two control paths:
 
-1. ESP32 + CMT2300A (Hoymiles)
-2. LAN8720 Ethernet
-3. MCP2515 CAN bridge
-4. Mean Well NPB-450 charger
-5. 12V 330Ah LiFePO4 battery
+1. **Raw CAN mode**: Home Assistant (or host script) sends exact CAN command frames.
+2. **Abstract mode**: Home Assistant sends only `ON/OFF` and `target_w`, while OpenDTU performs NPB-450 command generation, initialization, and validation internally.
 
 ## Files
 
-1. `device_profile_npb450_gateway.json`: Device pin mapping profile for your board.
-2. `meanwell_npb450_can_profile.example.json`: CAN/MQTT protocol profile used by the Python script.
-3. `npb450_zero_export_sim.py`: Example zero-export control loop over OpenDTU MQTT CAN topics.
+1. `device_profile_npb450_gateway.json`: pin mapping profile for ESP32 + CMT + ETH + MCP2515.
+2. `meanwell_npb450_can_profile.example.json`: profile used by the raw Python script.
+3. `npb450_zero_export_sim.py`: raw CAN control example over MQTT.
+4. `ha_emulator_dummy_loop.py`: host-side dummy Home Assistant emulator (raw + abstract modes).
+5. `home_assistant_npb450_package.yaml`: Home Assistant package example for abstract mode.
 
 ## Pin Mapping
 
@@ -33,99 +32,147 @@ This folder contains a complete example stack for your setup:
 | CAN CS | 5 |
 | CAN INT | 27 |
 
-## MQTT CAN Topics
+## MQTT Topics
 
-OpenDTU CAN bridge topics:
+Assuming MQTT prefix `solar/`.
 
-1. TX commands: `<prefix>meanwell/can/tx`
-2. RX frames: `<prefix>meanwell/can/rx`
+### Raw frame topics
 
-Frame schema:
+1. TX: `solar/meanwell/can/tx`
+2. RX: `solar/meanwell/can/rx`
+
+Raw frame schema:
 
 ```json
 {
-  "id": 773,
-  "ext": false,
+  "id": 786688,
+  "ext": true,
   "rtr": false,
-  "dlc": 8,
-  "data": [0, 1, 2, 3, 4, 5, 6, 7]
+  "dlc": 4,
+  "data": [194, 0, 0, 4]
 }
 ```
 
-## CAN IDs
+### Abstract NPB-450 control topics (implemented in OpenDTU)
 
-These receive IDs are already decoded by OpenDTU in `src/MeanwellCan.cpp`:
+Control:
 
-| ID | Meaning in integration |
-|---|---|
-| `0x305` | Charger output values |
-| `0x306` | Battery-side values |
-| `0x307` | Charger temperature and status |
-| `0x30A` | Alarm/status word |
+1. `solar/meanwell/npb450/control/enable` (`ON/OFF`, `true/false`, `1/0`)
+2. `solar/meanwell/npb450/control/target_w` (float watts)
+3. `solar/meanwell/npb450/control/commission_psu` (`ON` to send one-time PSU command)
 
-Transmit IDs (`set_charge_current`, `set_charge_voltage`, `charger_enable`) are profile-driven in `meanwell_npb450_can_profile.example.json`.
-Set them according to your official Mean Well NPB-450 CAN protocol document before enabling live control.
+Config:
 
-## Zero Export Automation Flow
+1. `solar/meanwell/npb450/config/charge_voltage_v`
+2. `solar/meanwell/npb450/config/max_current_a`
+3. `solar/meanwell/npb450/config/address` (0..15)
+
+Status:
+
+1. `solar/meanwell/npb450/status/init_state`
+2. `solar/meanwell/npb450/status/control_enabled`
+3. `solar/meanwell/npb450/status/target_w`
+4. `solar/meanwell/npb450/status/target_iout`
+5. `solar/meanwell/npb450/status/target_vout`
+6. `solar/meanwell/npb450/status/iout_actual`
+7. `solar/meanwell/npb450/status/psu_mode_ok`
+8. `solar/meanwell/npb450/status/eeprom_lock_ok`
+9. `solar/meanwell/npb450/status/address`
+
+## NPB-450 CAN specifics implemented in OpenDTU
+
+The firmware now directly implements:
+
+1. Extended CAN 29-bit ID control (`0x000C0100 + address`)
+2. 4-byte command payload format (`cmd_lo, cmd_hi, data_lo, data_hi`)
+3. Boot-time EEPROM lock command (`SYSTEM_CONFIG 0x00C2`, data `0x0400`)
+4. Validation polling for:
+   - `SYSTEM_STATUS 0x00C1` (PSU mode bit check)
+   - `SYSTEM_CONFIG 0x00C2` (EEPROM lock bit check)
+5. Runtime setpoint control:
+   - `VOUT_SET 0x0020`
+   - `IOUT_SET 0x0030`
+   - `OPERATION 0x0000`
+6. Optional commissioning command:
+   - `CURVE_CONFIG 0x00B4` with data `0x0004`
+
+## Control mode A: Raw CAN from Home Assistant
+
+Use this when HA should own exact CAN payload generation.
+
+Example command sequence:
+
+1. Lock EEPROM writes:
+   - ID `0x000C0100`, data `C2 00 00 04`
+2. Set VOUT 14.4V (`14.4 / 0.01 = 1440 = 0x05A0`):
+   - ID `0x000C0100`, data `20 00 A0 05`
+3. Set IOUT 12.5A (`12.5 / 0.01 = 1250 = 0x04E2`):
+   - ID `0x000C0100`, data `30 00 E2 04`
+4. Enable output:
+   - ID `0x000C0100`, data `00 00 01 00`
+
+Use `npb450_zero_export_sim.py` for raw mode simulation.
+
+## Control mode B: Abstract watt target from Home Assistant
+
+Use this when OpenDTU should own all NPB details.
+
+Required HA outputs:
+
+1. `control/enable`
+2. `control/target_w`
+
+OpenDTU then:
+
+1. Performs initialization state machine
+2. Validates PSU + EEPROM lock state
+3. Converts watts to current (`I = P / V`)
+4. Sends NPB setpoint commands at fixed interval
+
+Use `home_assistant_npb450_package.yaml` as template.
+
+## Automation flow
 
 ```mermaid
 flowchart TD
-    M[Grid Meter Power Topic] --> P[Python Zero Export Controller]
-    P -->|Compute target charge current| C[CAN Command Builder]
-    C -->|MQTT tx: meanwell/can/tx| O[OpenDTU CAN Bridge]
-    O --> B[MCP2515 CAN Bus]
-    B --> N[Mean Well NPB-450]
-    N -->|CAN telemetry| B
-    B --> O
-    O -->|MQTT rx: meanwell/can/rx| P
+    HA[Home Assistant] -->|enable + target_w| MQTT[(MQTT Broker)]
+    MQTT --> DTU[OpenDTU MeanwellCan]
+    DTU -->|NPB command frames| CAN[(MCP2515 CAN)]
+    CAN --> NPB[Mean Well NPB-450]
+    NPB -->|response frames| CAN
+    CAN --> DTU
+    DTU -->|status topics| MQTT
+    MQTT --> HA
 ```
 
-```mermaid
-sequenceDiagram
-    participant Meter as Grid Meter
-    participant Ctrl as Python Script
-    participant MQTT as MQTT Broker
-    participant DTU as OpenDTU
-    participant NPB as NPB-450
+## Host-side validation loop
 
-    Meter->>MQTT: publish export power (W)
-    Ctrl->>MQTT: subscribe meter + meanwell/can/rx
-    Ctrl->>Ctrl: compute target current/voltage
-    Ctrl->>MQTT: publish meanwell/can/tx frame
-    MQTT->>DTU: CAN TX JSON
-    DTU->>NPB: CAN command frame
-    NPB->>DTU: CAN status frame (0x305/0x306/0x307/0x30A)
-    DTU->>MQTT: publish meanwell/can/rx
-    MQTT->>Ctrl: receive telemetry
-```
-
-## Run Example Script
-
-Install dependency:
+Abstract mode:
 
 ```bash
-pip install paho-mqtt
-```
-
-Run:
-
-```bash
-python3 examples/npb450_zero_export_sim.py \
+python3 examples/ha_emulator_dummy_loop.py \
   --broker 192.168.1.10 \
-  --grid-topic home/grid/power_export_w \
-  --profile examples/meanwell_npb450_can_profile.example.json \
-  --charge-voltage-v 14.2 \
-  --max-charge-current-a 30 \
-  --max-charge-power-w 430
+  --mode abstract \
+  --prefix solar/
 ```
 
-## Battery Parameters (12V 330Ah LiFePO4)
+Raw mode:
 
-Recommended starting points for simulation:
+```bash
+python3 examples/ha_emulator_dummy_loop.py \
+  --broker 192.168.1.10 \
+  --mode raw \
+  --prefix solar/ \
+  --charger-address 0
+```
 
-1. `--charge-voltage-v 14.2`
-2. `--max-charge-current-a 30` (limited by NPB-450 power envelope)
-3. `--max-charge-power-w 430`
-4. `--deadband-w 40`
+## Battery defaults for 12V 330Ah LiFePO4
 
-Tune these based on your BMS limits and charger configuration.
+Suggested initial values:
+
+1. Charge voltage: `14.2 - 14.4V`
+2. Max current: `<= 30A` for NPB-450 envelope
+3. Max target power: `<= 430W`
+4. Deadband: `40W`
+
+Adjust to your BMS rules and temperature policy.

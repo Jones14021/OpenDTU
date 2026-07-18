@@ -250,6 +250,70 @@ bool MeanwellCanClass::isEnabled() const
     return _enabled;
 }
 
+void MeanwellCanClass::appendStatusJson(JsonObject& root) const
+{
+    root["enabled"] = _enabled;
+    root["data_age_ms"] = _lastStatusUpdateMs > 0 ? millis() - _lastStatusUpdateMs : -1;
+
+    auto npbObj = root["npb450"].to<JsonObject>();
+    String initState = "disabled";
+    switch (_npbInitState) {
+    case NpbInitState::Disabled:
+        initState = "disabled";
+        break;
+    case NpbInitState::SetEepromLock:
+        initState = "set_eeprom_lock";
+        break;
+    case NpbInitState::RequestValidation:
+        initState = "request_validation";
+        break;
+    case NpbInitState::Ready:
+        initState = "ready";
+        break;
+    case NpbInitState::Fault:
+        initState = "fault";
+        break;
+    }
+    npbObj["init_state"] = initState;
+    npbObj["control_enabled"] = _npbControlEnabled;
+    npbObj["target_w"] = _npbTargetWatts;
+    npbObj["target_iout_a"] = getTargetCurrentFromPower();
+    npbObj["target_vout_v"] = _npbChargeVoltage;
+    npbObj["iout_actual_a"] = _npbMeasuredCurrent;
+    npbObj["iout_actual_seen"] = _npbMeasuredCurrentSeen;
+    npbObj["psu_mode_ok"] = _npbPsuModeOk;
+    npbObj["eeprom_lock_ok"] = _npbEepromLockOk;
+    npbObj["address"] = _npbAddress;
+    npbObj["validation_seen"] = _npbValidationSeen;
+    npbObj["commissioning_pending"] = _npbCommissioningAllowed;
+    if (_npbSystemStatusSeen) {
+        npbObj["system_status_word"] = _npbSystemStatus;
+    }
+    if (_npbSystemConfigSeen) {
+        npbObj["system_config_word"] = _npbSystemConfig;
+    }
+
+    auto chargerObj = root["charger"].to<JsonObject>();
+    chargerObj["output_seen"] = _chargerOutputSeen;
+    chargerObj["output_voltage_v"] = _chargerOutputVoltage;
+    chargerObj["output_current_a"] = _chargerOutputCurrent;
+    chargerObj["output_power_w"] = _chargerOutputPower;
+    chargerObj["temperature_seen"] = _chargerTempSeen;
+    chargerObj["temperature_c"] = _chargerTemperature;
+    if (_chargerStateWordSeen) {
+        chargerObj["state_word"] = _chargerStateWord;
+    }
+    if (_chargerAlarmWordSeen) {
+        chargerObj["alarm_word"] = _chargerAlarmWord;
+    }
+
+    auto batteryObj = root["battery"].to<JsonObject>();
+    batteryObj["seen"] = _batterySeen;
+    batteryObj["voltage_v"] = _batteryVoltage;
+    batteryObj["current_a"] = _batteryCurrent;
+    batteryObj["power_w"] = _batteryPower;
+}
+
 void MeanwellCanClass::taskEntry(void* param)
 {
     static_cast<MeanwellCanClass*>(param)->taskLoop();
@@ -518,7 +582,7 @@ bool MeanwellCanClass::applyNpb450Setpoints()
     return ok;
 }
 
-float MeanwellCanClass::getTargetCurrentFromPower()
+float MeanwellCanClass::getTargetCurrentFromPower() const
 {
     if (_npbChargeVoltage <= 0.0f) {
         return 0.0f;
@@ -564,16 +628,22 @@ void MeanwellCanClass::handleNpb450Frame(const CanFrame& frame)
 
     switch (command) {
     case NPB_CMD_SYSTEM_STATUS:
+        _npbSystemStatus = value;
+        _npbSystemStatusSeen = true;
         _npbPsuModeOk = (value & 0x8000U) == 0;
         _npbValidationSeen = true;
+        _lastStatusUpdateMs = millis();
         if (MqttSettings.getConnected()) {
             MqttSettings.publish("meanwell/npb450/status/system_status", String(value));
             MqttSettings.publish("meanwell/npb450/status/psu_mode_ok", _npbPsuModeOk ? "1" : "0");
         }
         break;
     case NPB_CMD_SYSTEM_CONFIG:
+        _npbSystemConfig = value;
+        _npbSystemConfigSeen = true;
         _npbEepromLockOk = (value & NPB_DATA_SYSTEM_CONFIG_EEPOFF) != 0;
         _npbValidationSeen = true;
+        _lastStatusUpdateMs = millis();
         if (MqttSettings.getConnected()) {
             MqttSettings.publish("meanwell/npb450/status/system_config", String(value));
             MqttSettings.publish("meanwell/npb450/status/eeprom_lock_ok", _npbEepromLockOk ? "1" : "0");
@@ -581,6 +651,8 @@ void MeanwellCanClass::handleNpb450Frame(const CanFrame& frame)
         break;
     case NPB_CMD_READ_IOUT:
         _npbMeasuredCurrent = static_cast<float>(value) / 100.0f;
+        _npbMeasuredCurrentSeen = true;
+        _lastStatusUpdateMs = millis();
         publishMetric("meanwell/npb450/status/iout_actual", _npbMeasuredCurrent, 2);
         break;
     default:
@@ -598,6 +670,11 @@ void MeanwellCanClass::decodeMeanwellPbn(const CanFrame& frame)
     case 0x305: {
         const float outputVoltage = readU16Be(&frame.data[0]) / 10.0f;
         const float outputCurrent = readU16Be(&frame.data[2]) / 10.0f;
+        _chargerOutputSeen = true;
+        _chargerOutputVoltage = outputVoltage;
+        _chargerOutputCurrent = outputCurrent;
+        _chargerOutputPower = outputVoltage * outputCurrent;
+        _lastStatusUpdateMs = millis();
         publishMetric("meanwell/charger/output_voltage", outputVoltage, 1);
         publishMetric("meanwell/charger/output_current", outputCurrent, 1);
         publishMetric("meanwell/charger/output_power", outputVoltage * outputCurrent, 1);
@@ -606,6 +683,11 @@ void MeanwellCanClass::decodeMeanwellPbn(const CanFrame& frame)
     case 0x306: {
         const float batteryVoltage = readU16Be(&frame.data[0]) / 10.0f;
         const float batteryCurrent = readS16Be(&frame.data[2]) / 10.0f;
+        _batterySeen = true;
+        _batteryVoltage = batteryVoltage;
+        _batteryCurrent = batteryCurrent;
+        _batteryPower = batteryVoltage * batteryCurrent;
+        _lastStatusUpdateMs = millis();
         publishMetric("meanwell/battery/voltage", batteryVoltage, 1);
         publishMetric("meanwell/battery/current", batteryCurrent, 1);
         publishMetric("meanwell/battery/power", batteryVoltage * batteryCurrent, 1);
@@ -614,12 +696,20 @@ void MeanwellCanClass::decodeMeanwellPbn(const CanFrame& frame)
     case 0x307: {
         const float chargerTemp = readS16Be(&frame.data[0]) / 10.0f;
         const uint16_t stateWord = readU16Be(&frame.data[2]);
+        _chargerTempSeen = true;
+        _chargerTemperature = chargerTemp;
+        _chargerStateWordSeen = true;
+        _chargerStateWord = stateWord;
+        _lastStatusUpdateMs = millis();
         publishMetric("meanwell/charger/temperature", chargerTemp, 1);
         MqttSettings.publish("meanwell/charger/state_word", String(stateWord));
         break;
     }
     case 0x30A: {
         const uint16_t alarmWord = readU16Be(&frame.data[0]);
+        _chargerAlarmWordSeen = true;
+        _chargerAlarmWord = alarmWord;
+        _lastStatusUpdateMs = millis();
         MqttSettings.publish("meanwell/charger/alarm_word", String(alarmWord));
         break;
     }

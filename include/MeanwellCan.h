@@ -2,6 +2,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include <ArduinoJson.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <hal/gpio_types.h>
@@ -10,6 +11,7 @@ class MeanwellCanClass {
 public:
     void init();
     bool isEnabled() const;
+    void appendStatusJson(JsonObject& root) const;
 
 private:
     enum class NpbInitState : uint8_t {
@@ -46,7 +48,7 @@ private:
     bool requestNpb450Register(uint16_t command);
     bool setNpb450EepromLock();
     bool applyNpb450Setpoints();
-    float getTargetCurrentFromPower();
+    float getTargetCurrentFromPower() const;
 
     static bool parseBoolPayload(const String& payload, bool& out);
     static bool parseFloatPayload(const String& payload, float& out);
@@ -89,6 +91,27 @@ private:
     bool _npbEepromLockOk = false;
     bool _npbValidationSeen = false;
     bool _npbCommissioningAllowed = false;
+    bool _npbSystemStatusSeen = false;
+    bool _npbSystemConfigSeen = false;
+    bool _npbMeasuredCurrentSeen = false;
+    uint16_t _npbSystemStatus = 0;
+    uint16_t _npbSystemConfig = 0;
+
+    bool _chargerOutputSeen = false;
+    bool _batterySeen = false;
+    bool _chargerTempSeen = false;
+    bool _chargerStateWordSeen = false;
+    bool _chargerAlarmWordSeen = false;
+    float _chargerOutputVoltage = 0.0f;
+    float _chargerOutputCurrent = 0.0f;
+    float _chargerOutputPower = 0.0f;
+    float _batteryVoltage = 0.0f;
+    float _batteryCurrent = 0.0f;
+    float _batteryPower = 0.0f;
+    float _chargerTemperature = 0.0f;
+    uint16_t _chargerStateWord = 0;
+    uint16_t _chargerAlarmWord = 0;
+    uint32_t _lastStatusUpdateMs = 0;
 };
 
 extern MeanwellCanClass MeanwellCan;

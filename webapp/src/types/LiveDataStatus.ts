@@ -62,8 +62,52 @@ export interface Hints {
     pin_mapping_issue: boolean;
 }
 
+export interface ChargerNpb450Status {
+    init_state?: string;
+    control_enabled?: boolean;
+    target_w?: number;
+    target_iout_a?: number;
+    target_vout_v?: number;
+    iout_actual_a?: number;
+    iout_actual_seen?: boolean;
+    psu_mode_ok?: boolean;
+    eeprom_lock_ok?: boolean;
+    address?: number;
+    validation_seen?: boolean;
+    commissioning_pending?: boolean;
+    system_status_word?: number;
+    system_config_word?: number;
+}
+
+export interface ChargerMetricsStatus {
+    output_seen?: boolean;
+    output_voltage_v?: number;
+    output_current_a?: number;
+    output_power_w?: number;
+    temperature_seen?: boolean;
+    temperature_c?: number;
+    state_word?: number;
+    alarm_word?: number;
+}
+
+export interface BatteryMetricsStatus {
+    seen?: boolean;
+    voltage_v?: number;
+    current_a?: number;
+    power_w?: number;
+}
+
+export interface ChargerStatus {
+    enabled: boolean;
+    data_age_ms: number;
+    npb450: ChargerNpb450Status;
+    charger: ChargerMetricsStatus;
+    battery: BatteryMetricsStatus;
+}
+
 export interface LiveData {
     inverters: Inverter[];
     total: Total;
     hints: Hints;
+    charger: ChargerStatus;
 }

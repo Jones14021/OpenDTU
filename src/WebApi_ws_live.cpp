@@ -4,6 +4,7 @@
  */
 #include "WebApi_ws_live.h"
 #include "Datastore.h"
+#include "MeanwellCan.h"
 #include "Utils.h"
 #include "WebApi.h"
 #include "defaults.h"
@@ -136,6 +137,9 @@ void WebApiWsLiveClass::generateCommonJsonResponse(JsonVariant& root)
     hintObj["default_password"] = strcmp(Configuration.get().Security.Password, ACCESS_POINT_PASSWORD) == 0;
 
     hintObj["pin_mapping_issue"] = PIN_MAPPING_REQUIRED && !PinMapping.isMappingSelected();
+
+    JsonObject chargerObj = root["charger"].to<JsonObject>();
+    MeanwellCan.appendStatusJson(chargerObj);
 }
 
 void WebApiWsLiveClass::generateInverterCommonJsonResponse(JsonObject& root, std::shared_ptr<InverterAbstract> inv)

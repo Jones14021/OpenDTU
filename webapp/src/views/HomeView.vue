@@ -9,6 +9,140 @@
     >
         <HintView :hints="liveData.hints" />
         <InverterTotalInfo :totalData="liveData.total" /><br />
+        <div class="row gy-3 mb-2" v-if="liveData.charger">
+            <div class="col-12">
+                <div class="card border-info h-100">
+                    <div class="card-header d-flex justify-content-between flex-wrap gap-2 align-items-center">
+                        <div class="fw-semibold">{{ $t('home.ChargerStatus') }}</div>
+                        <div class="d-flex gap-2 flex-wrap align-items-center">
+                            <span class="badge text-bg-secondary" v-if="!liveData.charger.enabled">
+                                {{ $t('home.Disabled') }}
+                            </span>
+                            <template v-else>
+                                <span class="badge" :class="chargerInitClass(liveData.charger.npb450.init_state)">
+                                    {{ $t('home.NpbInit_' + (liveData.charger.npb450.init_state || 'disabled')) }}
+                                </span>
+                                <span
+                                    class="badge"
+                                    :class="
+                                        liveData.charger.npb450.control_enabled
+                                            ? 'text-bg-success'
+                                            : 'text-bg-secondary'
+                                    "
+                                >
+                                    {{
+                                        liveData.charger.npb450.control_enabled
+                                            ? $t('home.ControlEnabled')
+                                            : $t('home.ControlDisabled')
+                                    }}
+                                </span>
+                            </template>
+                            <DataAgeDisplay v-if="liveData.charger.data_age_ms >= 0" :data-age-ms="liveData.charger.data_age_ms" />
+                            <span class="badge text-bg-warning" v-else>{{ $t('home.WaitingForChargerData') }}</span>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-lg-4">
+                                <h6 class="text-uppercase text-muted mb-2">{{ $t('home.Npb450Control') }}</h6>
+                                <table class="table table-sm table-striped mb-0">
+                                    <tbody>
+                                        <tr>
+                                            <td>{{ $t('home.Address') }}</td>
+                                            <td>{{ liveData.charger.npb450.address ?? '-' }}</td>
+                                        </tr>
+                                        <tr>
+                                            <td>{{ $t('home.TargetPower') }}</td>
+                                            <td>{{ $n(liveData.charger.npb450.target_w ?? 0, 'decimalOneDigit') }} W</td>
+                                        </tr>
+                                        <tr>
+                                            <td>{{ $t('home.TargetVoltage') }}</td>
+                                            <td>{{ $n(liveData.charger.npb450.target_vout_v ?? 0, 'decimalTwoDigits') }} V</td>
+                                        </tr>
+                                        <tr>
+                                            <td>{{ $t('home.TargetCurrent') }}</td>
+                                            <td>{{ $n(liveData.charger.npb450.target_iout_a ?? 0, 'decimalTwoDigits') }} A</td>
+                                        </tr>
+                                        <tr>
+                                            <td>{{ $t('home.ActualCurrent') }}</td>
+                                            <td>{{ $n(liveData.charger.npb450.iout_actual_a ?? 0, 'decimalTwoDigits') }} A</td>
+                                        </tr>
+                                        <tr>
+                                            <td>{{ $t('home.PsuModeOk') }}</td>
+                                            <td>{{ liveData.charger.npb450.psu_mode_ok ? $t('base.Yes') : $t('base.No') }}</td>
+                                        </tr>
+                                        <tr>
+                                            <td>{{ $t('home.EepromLockOk') }}</td>
+                                            <td>
+                                                {{ liveData.charger.npb450.eeprom_lock_ok ? $t('base.Yes') : $t('base.No') }}
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td>{{ $t('home.SystemStatusWord') }}</td>
+                                            <td>{{ formatWord(liveData.charger.npb450.system_status_word) }}</td>
+                                        </tr>
+                                        <tr>
+                                            <td>{{ $t('home.SystemConfigWord') }}</td>
+                                            <td>{{ formatWord(liveData.charger.npb450.system_config_word) }}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="col-lg-4">
+                                <h6 class="text-uppercase text-muted mb-2">{{ $t('home.ChargerMetrics') }}</h6>
+                                <table class="table table-sm table-striped mb-0">
+                                    <tbody>
+                                        <tr>
+                                            <td>{{ $t('home.OutputVoltage') }}</td>
+                                            <td>{{ $n(liveData.charger.charger.output_voltage_v ?? 0, 'decimalOneDigit') }} V</td>
+                                        </tr>
+                                        <tr>
+                                            <td>{{ $t('home.OutputCurrent') }}</td>
+                                            <td>{{ $n(liveData.charger.charger.output_current_a ?? 0, 'decimalOneDigit') }} A</td>
+                                        </tr>
+                                        <tr>
+                                            <td>{{ $t('home.OutputPower') }}</td>
+                                            <td>{{ $n(liveData.charger.charger.output_power_w ?? 0, 'decimalOneDigit') }} W</td>
+                                        </tr>
+                                        <tr>
+                                            <td>{{ $t('home.ChargerTemperature') }}</td>
+                                            <td>{{ $n(liveData.charger.charger.temperature_c ?? 0, 'decimalOneDigit') }} °C</td>
+                                        </tr>
+                                        <tr>
+                                            <td>{{ $t('home.StateWord') }}</td>
+                                            <td>{{ formatWord(liveData.charger.charger.state_word) }}</td>
+                                        </tr>
+                                        <tr>
+                                            <td>{{ $t('home.AlarmWord') }}</td>
+                                            <td>{{ formatWord(liveData.charger.charger.alarm_word) }}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="col-lg-4">
+                                <h6 class="text-uppercase text-muted mb-2">{{ $t('home.BatteryMetrics') }}</h6>
+                                <table class="table table-sm table-striped mb-0">
+                                    <tbody>
+                                        <tr>
+                                            <td>{{ $t('home.BatteryVoltage') }}</td>
+                                            <td>{{ $n(liveData.charger.battery.voltage_v ?? 0, 'decimalOneDigit') }} V</td>
+                                        </tr>
+                                        <tr>
+                                            <td>{{ $t('home.BatteryCurrent') }}</td>
+                                            <td>{{ $n(liveData.charger.battery.current_a ?? 0, 'decimalOneDigit') }} A</td>
+                                        </tr>
+                                        <tr>
+                                            <td>{{ $t('home.BatteryPower') }}</td>
+                                            <td>{{ $n(liveData.charger.battery.power_w ?? 0, 'decimalOneDigit') }} W</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
         <div class="row gy-3">
             <div class="col-sm-3 col-md-2" :style="[inverterData.length == 1 ? { display: 'none' } : {}]">
                 <div
@@ -515,7 +649,7 @@ import type { GridProfileRawdata } from '@/types/GridProfileRawdata';
 import type { GridProfileStatus } from '@/types/GridProfileStatus';
 import type { LimitConfig } from '@/types/LimitConfig';
 import type { LimitStatus } from '@/types/LimitStatus';
-import type { Inverter, LiveData } from '@/types/LiveDataStatus';
+import type { ChargerStatus, Inverter, LiveData } from '@/types/LiveDataStatus';
 import { authHeader, authUrl, handleResponse, isLoggedIn } from '@/utils/authentication';
 import * as bootstrap from 'bootstrap';
 import {
@@ -670,6 +804,15 @@ export default defineComponent({
             fetch('/api/livedata/status', { headers: authHeader() })
                 .then((response) => handleResponse(response, this.$emitter, this.$router))
                 .then((data) => {
+                    if (!data.charger) {
+                        data.charger = {
+                            enabled: false,
+                            data_age_ms: -1,
+                            npb450: {},
+                            charger: {},
+                            battery: {},
+                        } as ChargerStatus;
+                    }
                     this.liveData = data;
                     if (triggerLoading) {
                         this.dataLoading = false;
@@ -693,6 +836,21 @@ export default defineComponent({
 
             Object.assign(this.liveData.total, newData.total);
             Object.assign(this.liveData.hints, newData.hints);
+            if (newData.charger) {
+                if (!this.liveData.charger) {
+                    this.liveData.charger = {
+                        enabled: false,
+                        data_age_ms: -1,
+                        npb450: {},
+                        charger: {},
+                        battery: {},
+                    } as ChargerStatus;
+                }
+                Object.assign(this.liveData.charger, newData.charger);
+                Object.assign(this.liveData.charger.npb450, newData.charger.npb450 || {});
+                Object.assign(this.liveData.charger.charger, newData.charger.charger || {});
+                Object.assign(this.liveData.charger.battery, newData.charger.battery || {});
+            }
 
             const idx = this.liveData.inverters.findIndex((i) => i.serial === newData.inverters[0].serial);
 
@@ -925,6 +1083,25 @@ export default defineComponent({
                 return '-';
             }
             return this.$n(val_small / val_large, 'percent');
+        },
+        chargerInitClass(initState?: string): string {
+            switch (initState) {
+                case 'ready':
+                    return 'text-bg-success';
+                case 'fault':
+                    return 'text-bg-danger';
+                case 'request_validation':
+                case 'set_eeprom_lock':
+                    return 'text-bg-warning';
+                default:
+                    return 'text-bg-secondary';
+            }
+        },
+        formatWord(value?: number): string {
+            if (value === undefined) {
+                return '-';
+            }
+            return `0x${value.toString(16).toUpperCase().padStart(4, '0')} (${value})`;
         },
     },
 });

@@ -986,9 +986,13 @@ void MeanwellCanClass::publishNpb450State()
     publishMetric("meanwell/npb450/status/target_w", _npbTargetWatts, 1);
     publishMetric("meanwell/npb450/status/target_iout", getTargetCurrentFromPower(), 2);
     publishMetric("meanwell/npb450/status/target_vout", _npbChargeVoltage, 2);
+    publishMetric("meanwell/npb450/status/max_current", _npbMaxCurrent, 2);
     MqttSettings.publish("meanwell/npb450/status/psu_mode_ok", _npbPsuModeOk ? "1" : "0");
     MqttSettings.publish("meanwell/npb450/status/eeprom_lock_ok", _npbEepromLockOk ? "1" : "0");
     MqttSettings.publish("meanwell/npb450/status/address", String(_npbAddress));
+    MqttSettings.publish("meanwell/npb450/status/validation_seen", _npbValidationSeen ? "1" : "0");
+    MqttSettings.publish("meanwell/npb450/status/iout_actual_seen", _npbMeasuredCurrentSeen ? "1" : "0");
+    MqttSettings.publish("meanwell/npb450/status/commissioning_pending", _npbCommissioningAllowed ? "1" : "0");
 }
 
 bool MeanwellCanClass::parseBoolPayload(const String& payload, bool& out)

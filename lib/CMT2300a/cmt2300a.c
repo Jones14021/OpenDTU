@@ -19,6 +19,29 @@
  */
 
 #include "cmt2300a.h"
+#include <esp_log.h>
+
+#undef TAG
+static const char* TAG = "cmt2300";
+
+static void log_bus_pattern(const char* ctx)
+{
+    const uint8_t modeSta = CMT2300A_ReadReg(CMT2300A_CUS_MODE_STA);
+    const uint8_t intFlag = CMT2300A_ReadReg(CMT2300A_CUS_INT_FLAG);
+    const uint8_t intClr1 = CMT2300A_ReadReg(CMT2300A_CUS_INT_CLR1);
+    const uint8_t fifoFlag = CMT2300A_ReadReg(CMT2300A_CUS_FIFO_FLAG);
+    const uint8_t pkt17 = CMT2300A_ReadReg(CMT2300A_CUS_PKT17);
+
+    ESP_LOGE(TAG, "%s pattern: mode_sta=0x%02x int_flag=0x%02x int_clr1=0x%02x fifo_flag=0x%02x pkt17=0x%02x",
+        ctx, modeSta, intFlag, intClr1, fifoFlag, pkt17);
+
+    // Stuck 0x00/0xFF patterns are a strong indicator that SDIO reads are not
+    // actually receiving data from the transceiver (3-wire directioning/pin mux).
+    if ((modeSta == 0x00 && intFlag == 0x00 && intClr1 == 0x00 && fifoFlag == 0x00)
+        || (modeSta == 0xFF && intFlag == 0xFF && intClr1 == 0xFF && fifoFlag == 0xFF)) {
+        ESP_LOGE(TAG, "3-wire SPI suspect: bus reads look stuck (all 0x00/0xFF)");
+    }
+}
 
 /*! ********************************************************
  * @name    CMT2300A_SoftReset
@@ -596,6 +619,13 @@ bool CMT2300A_IsExist(void)
     dat = CMT2300A_ReadReg(CMT2300A_CUS_PKT17);
     CMT2300A_WriteReg(CMT2300A_CUS_PKT17, back);
 
+    if (0xAA != dat) {
+        const uint8_t restored = CMT2300A_ReadReg(CMT2300A_CUS_PKT17);
+        ESP_LOGE(TAG, "IsExist failed: pkt17 before=0x%02x wrote=0xAA read=0x%02x restored=0x%02x",
+            back, dat, restored);
+        log_bus_pattern("IsExist failed");
+    }
+
     if (0xAA == dat)
         return true;
     else
@@ -742,11 +772,29 @@ bool CMT2300A_Init(void)
     CMT2300A_SoftReset();
     CMT2300A_DelayMs(20);
 
-    if (!CMT2300A_GoStby())
-        return false; // CMT2300A not switched to standby mode!
+    // If RSTN_IN is left enabled and the external reset input is floating,
+    // the chip can remain in STA_ERROR. Disable it before mode transitions.
+    tmp = CMT2300A_ReadReg(CMT2300A_CUS_MODE_STA);
+    tmp &= ~CMT2300A_MASK_RSTN_IN_EN;
+    CMT2300A_WriteReg(CMT2300A_CUS_MODE_STA, tmp);
+    CMT2300A_DelayMs(1);
 
-    if (!CMT2300A_IsExist())
+    if (!CMT2300A_GoStby()) {
+        ESP_LOGE(TAG, "Init fail: GoStby failed, mode_sta=0x%02x int_flag=0x%02x int_clr1=0x%02x",
+            CMT2300A_ReadReg(CMT2300A_CUS_MODE_STA),
+            CMT2300A_ReadReg(CMT2300A_CUS_INT_FLAG),
+            CMT2300A_ReadReg(CMT2300A_CUS_INT_CLR1));
+        log_bus_pattern("GoStby failed");
+        return false; // CMT2300A not switched to standby mode!
+    }
+
+    if (!CMT2300A_IsExist()) {
+        ESP_LOGE(TAG, "Init fail: IsExist failed, pkt17=0x%02x mode_sta=0x%02x",
+            CMT2300A_ReadReg(CMT2300A_CUS_PKT17),
+            CMT2300A_ReadReg(CMT2300A_CUS_MODE_STA));
+        log_bus_pattern("Init IsExist failed");
         return false; // CMT2300A not found!
+    }
 
     tmp = CMT2300A_ReadReg(CMT2300A_CUS_MODE_STA);
     tmp |= CMT2300A_MASK_CFG_RETAIN; /* Enable CFG_RETAIN */

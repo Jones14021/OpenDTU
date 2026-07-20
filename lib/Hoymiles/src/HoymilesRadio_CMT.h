@@ -69,6 +69,7 @@ public:
 private:
     void ARDUINO_ISR_ATTR handleInt1();
     void ARDUINO_ISR_ATTR handleInt2();
+    bool recoverRadioAfterTxFailure();
 
     void sendEsbPacket(CommandAbstract& cmd);
 
@@ -84,6 +85,8 @@ private:
     TimeoutHelper _txTimeout;
 
     uint32_t _inverterTargetFrequency = HOYMILES_CMT_WORK_FREQ;
+    int8_t _configuredPaLevel = 0;
+    uint32_t _nextRecoveryAttemptMs = 0;
 
     bool cmtSwitchDtuFreq(const uint32_t to_frequency);
 

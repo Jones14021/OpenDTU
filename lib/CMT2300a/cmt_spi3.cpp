@@ -2,6 +2,10 @@
 #include <Arduino.h>
 #include <SpiManager.h>
 #include <driver/spi_master.h>
+#include <esp_log.h>
+
+#undef TAG
+static const char* TAG = "cmt_spi";
 
 SemaphoreHandle_t paramLock = NULL;
 #define SPI_PARAM_LOCK() \
@@ -21,10 +25,27 @@ static void IRAM_ATTR post_cb(spi_transaction_t* trans)
 
 spi_device_handle_t spi;
 gpio_num_t cs_reg, cs_fifo;
+static bool spi_ready = false;
+
+// Keep the CMT2300A path on SPI3_HOST on ESP32. This is the historically used
+// host for this driver and pin mapping and is known to initialize reliably.
+#if SOC_SPI_PERIPH_NUM > 2 && !CONFIG_IDF_TARGET_ESP32S2
+static constexpr spi_host_device_t CMT_PREFERRED_SPI_HOST = SPI3_HOST;
+#else
+static constexpr spi_host_device_t CMT_PREFERRED_SPI_HOST = SPI2_HOST;
+#endif
 
 void cmt_spi3_init(const int8_t pin_sdio, const int8_t pin_clk, const int8_t pin_cs, const int8_t pin_fcs, const int32_t spi_speed)
 {
     paramLock = xSemaphoreCreateMutex();
+
+    ESP_LOGD(TAG, "CMT SPI host=%d clk=%d sdio=%d cs=%d fcs=%d speed=%ld",
+        static_cast<int>(CMT_PREFERRED_SPI_HOST),
+        static_cast<int>(pin_clk),
+        static_cast<int>(pin_sdio),
+        static_cast<int>(pin_cs),
+        static_cast<int>(pin_fcs),
+        static_cast<long>(spi_speed));
 
     auto bus_config = std::make_shared<SpiBusConfig>(
         static_cast<gpio_num_t>(pin_sdio),
@@ -48,9 +69,13 @@ void cmt_spi3_init(const int8_t pin_sdio, const int8_t pin_clk, const int8_t pin
         .post_cb = post_cb,
     };
 
-    spi = SpiManagerInst.alloc_device("", bus_config, device_config);
-    if (!spi)
-        ESP_ERROR_CHECK(ESP_FAIL);
+    spi = SpiManagerInst.alloc_device("cmt2300a", bus_config, device_config, CMT_PREFERRED_SPI_HOST);
+    if (!spi) {
+        ESP_LOGE(TAG, "Unable to allocate CMT SPI device");
+        spi_ready = false;
+        return;
+    }
+    spi_ready = true;
 
     cs_reg = static_cast<gpio_num_t>(pin_cs);
     ESP_ERROR_CHECK(gpio_reset_pin(cs_reg));
@@ -65,6 +90,9 @@ void cmt_spi3_init(const int8_t pin_sdio, const int8_t pin_clk, const int8_t pin
 
 void cmt_spi3_write(const uint8_t addr, const uint8_t data)
 {
+    if (!spi_ready || !spi)
+        return;
+
     spi_transaction_ext_t trans {
         .base {
             .flags = SPI_TRANS_VARIABLE_CMD | SPI_TRANS_VARIABLE_ADDR,
@@ -87,6 +115,9 @@ void cmt_spi3_write(const uint8_t addr, const uint8_t data)
 
 uint8_t cmt_spi3_read(const uint8_t addr)
 {
+    if (!spi_ready || !spi)
+        return 0;
+
     uint8_t data;
     spi_transaction_ext_t trans {
         .base {
@@ -111,6 +142,9 @@ uint8_t cmt_spi3_read(const uint8_t addr)
 
 void cmt_spi3_write_fifo(const uint8_t* buf, const uint16_t len)
 {
+    if (!spi_ready || !spi)
+        return;
+
     spi_transaction_t trans {
         .flags = 0,
         .cmd = 0,
@@ -134,6 +168,9 @@ void cmt_spi3_write_fifo(const uint8_t* buf, const uint16_t len)
 
 void cmt_spi3_read_fifo(uint8_t* buf, const uint16_t len)
 {
+    if (!spi_ready || !spi)
+        return;
+
     spi_transaction_t trans {
         .flags = 0,
         .cmd = 0,

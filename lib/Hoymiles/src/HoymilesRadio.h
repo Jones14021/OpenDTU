@@ -91,3 +91,7 @@ protected:
 
     TimeoutHelper _rxTimeout;
 };
+
+// Set while CMT TX + transition to RX is in progress to allow other subsystems
+// to avoid concurrent SPI-heavy activity during this critical section.
+extern volatile bool g_hoymilesCmtTxInProgress;

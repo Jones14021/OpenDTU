@@ -111,7 +111,6 @@ void setup()
     MqttHandleInverter.init(scheduler);
     MqttHandleInverterTotal.init(scheduler);
     MqttHandleHass.init(scheduler);
-    MeanwellCan.init();
 
     // Initialize WebApi
     ESP_LOGI(TAG, "Initializing WebApi...");
@@ -126,6 +125,12 @@ void setup()
     LedSingle.init(scheduler);
 
     InverterSettings.init(scheduler);
+
+    // Start MCP2515-based Meanwell CAN gateway only after the CMT2300A radio
+    // has been fully initialized. The MeanwellCan task drives a separate SPI
+    // peripheral, but bringing it up earlier can compete with the inverter
+    // radio for CPU time during its blocking init/TX polling loops.
+    MeanwellCan.init();
 
     Datastore.init(scheduler);
     RestartHelper.init(scheduler);

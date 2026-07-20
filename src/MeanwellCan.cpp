@@ -5,6 +5,7 @@
 #include "MeanwellCan.h"
 #include "MqttSettings.h"
 #include "PinMapping.h"
+#include <HoymilesRadio.h>
 #include <ArduinoJson.h>
 #include <SPI.h>
 #include <SpiManager.h>
@@ -112,6 +113,11 @@ MeanwellCanClass MeanwellCan;
 
 void MeanwellCanClass::init()
 {
+#ifdef MEANWELL_CAN_DISABLED
+    ESP_LOGW(TAG, "Meanwell CAN service disabled at compile time (MEANWELL_CAN_DISABLED)");
+    return;
+#endif
+
     _configured = PinMapping.isValidCanConfig();
     if (!_configured) {
         ESP_LOGI(TAG, "CAN pin mapping not configured, service disabled");
@@ -131,19 +137,26 @@ void MeanwellCanClass::init()
         pinMode(_pinInt, INPUT_PULLUP);
     }
 
-    auto spi_bus = SpiManagerInst.claim_bus_arduino();
+    // Pin the MCP2515 to SPI2_HOST (HSPI). The CMT2300A path is pinned to
+    // SPI3_HOST so host assignment is deterministic and independent of init order.
+    auto spi_bus = SpiManagerInst.claim_bus_arduino(SPI2_HOST);
     if (!spi_bus) {
-        ESP_LOGE(TAG, "No free SPI host available for MCP2515");
+        ESP_LOGE(TAG, "SPI2_HOST not available for MCP2515");
         return;
     }
+    ESP_LOGI(TAG, "MCP2515 using Arduino SPI bus %u (SPI2_HOST/HSPI)", *spi_bus);
     _spi = new SPIClass(*spi_bus);
     _spi->begin(_pinSck, _pinMiso, _pinMosi, _pinCs);
     if (!initializeController()) {
-        ESP_LOGE(TAG, "Failed to initialize MCP2515");
+        ESP_LOGE(TAG, "MCP2515 init failed (chip missing or wired incorrectly); Meanwell CAN service disabled");
+        _spi->end();
+        delete _spi;
+        _spi = nullptr;
         return;
     }
     _controllerResponsive = true;
     _controllerInNormalMode = true;
+    ESP_LOGI(TAG, "MCP2515 detected and initialized");
 
     const String rawCommandTopic = MqttSettings.getPrefix() + "meanwell/can/tx";
     MqttSettings.subscribe(rawCommandTopic, 0, [this](const espMqttClientTypes::MessageProperties&, const char*, const uint8_t* payload, size_t len) {
@@ -247,7 +260,10 @@ void MeanwellCanClass::init()
     _nextStatePublishMs = 0;
     _nextControllerHealthCheckMs = 0;
 
-    if (xTaskCreatePinnedToCore(taskEntry, "MeanwellCAN", 6144, this, 1, &_taskHandle, tskNO_AFFINITY) != pdPASS) {
+    // Run at the lowest non-idle priority so this task can never delay
+    // higher-priority work such as the Hoymiles CMT2300A TX polling loop
+    // (which busy-waits on SPI reads with tight wall-clock timeouts).
+    if (xTaskCreatePinnedToCore(taskEntry, "MeanwellCAN", 6144, this, tskIDLE_PRIORITY + 1, &_taskHandle, tskNO_AFFINITY) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create CAN task");
         return;
     }
@@ -259,6 +275,11 @@ void MeanwellCanClass::init()
 bool MeanwellCanClass::isEnabled() const
 {
     return _enabled;
+}
+
+void MeanwellCanClass::setIoSuspended(bool suspended)
+{
+    _ioSuspended = suspended;
 }
 
 bool MeanwellCanClass::queueCanFrameFromJson(JsonVariantConst frameJson, String& error)
@@ -421,6 +442,11 @@ void MeanwellCanClass::taskEntry(void* param)
 void MeanwellCanClass::taskLoop()
 {
     for (;;) {
+        if (_ioSuspended || g_hoymilesCmtTxInProgress) {
+            vTaskDelay(pdMS_TO_TICKS(2));
+            continue;
+        }
+
         if (_hasPendingTxFrame) {
             if (sendFrame(_pendingTxFrame)) {
                 _hasPendingTxFrame = false;

@@ -6,6 +6,10 @@
 #include "cmt2300a.h"
 #include "cmt2300a_params_860.h"
 #include "cmt2300a_params_900.h"
+#include <esp_log.h>
+
+#undef TAG
+static const char* TAG = "cmt2300";
 
 CMT2300A::CMT2300A(const uint8_t pin_sdio, const uint8_t pin_clk, const uint8_t pin_cs, const uint8_t pin_fcs, const uint32_t spi_speed)
 {
@@ -68,6 +72,14 @@ void CMT2300A::read(void* buf, const uint8_t len)
 
 bool CMT2300A::write(const uint8_t* buf, const uint8_t len)
 {
+    _lastTxDiag.timestampMs = millis();
+    _lastTxDiag.stage = 1;
+    _lastTxDiag.payloadLen = len;
+    _lastTxDiag.channel = CMT2300A_ReadReg(CMT2300A_CUS_FREQ_CHNL);
+    _lastTxDiag.modeSta = CMT2300A_ReadReg(CMT2300A_CUS_MODE_STA);
+    _lastTxDiag.intFlag = CMT2300A_ReadReg(CMT2300A_CUS_INT_FLAG);
+    _lastTxDiag.intClr1 = CMT2300A_ReadReg(CMT2300A_CUS_INT_CLR1);
+
     CMT2300A_GoStby();
     CMT2300A_ClearInterruptFlags();
 
@@ -79,26 +91,81 @@ bool CMT2300A::write(const uint8_t* buf, const uint8_t len)
     /* The length need be smaller than 32 */
     CMT2300A_WriteFifo(buf, len);
 
-    if (!(CMT2300A_ReadReg(CMT2300A_CUS_FIFO_FLAG) & CMT2300A_MASK_TX_FIFO_NMTY_FLG)) {
+    _lastTxDiag.stage = 2;
+    _lastTxDiag.fifoFlag = CMT2300A_ReadReg(CMT2300A_CUS_FIFO_FLAG);
+
+    if (!(_lastTxDiag.fifoFlag & CMT2300A_MASK_TX_FIFO_NMTY_FLG)) {
+        _lastTxDiag.stage = 3;
+        _lastTxDiag.modeSta = CMT2300A_ReadReg(CMT2300A_CUS_MODE_STA);
+        _lastTxDiag.intFlag = CMT2300A_ReadReg(CMT2300A_CUS_INT_FLAG);
+        _lastTxDiag.intClr1 = CMT2300A_ReadReg(CMT2300A_CUS_INT_CLR1);
+        ESP_LOGE(TAG,
+            "TX fail stage=%u len=%u ch=%u mode=0x%02x fifo=0x%02x int=0x%02x intclr1=0x%02x (fifo non-empty flag missing)",
+            static_cast<unsigned>(_lastTxDiag.stage),
+            static_cast<unsigned>(_lastTxDiag.payloadLen),
+            static_cast<unsigned>(_lastTxDiag.channel),
+            static_cast<unsigned>(_lastTxDiag.modeSta),
+            static_cast<unsigned>(_lastTxDiag.fifoFlag),
+            static_cast<unsigned>(_lastTxDiag.intFlag),
+            static_cast<unsigned>(_lastTxDiag.intClr1));
         return false;
     }
 
     if (!CMT2300A_GoTx()) {
+        _lastTxDiag.stage = 4;
+        _lastTxDiag.modeSta = CMT2300A_ReadReg(CMT2300A_CUS_MODE_STA);
+        _lastTxDiag.intFlag = CMT2300A_ReadReg(CMT2300A_CUS_INT_FLAG);
+        _lastTxDiag.intClr1 = CMT2300A_ReadReg(CMT2300A_CUS_INT_CLR1);
+        ESP_LOGE(TAG,
+            "TX fail stage=%u len=%u ch=%u mode=0x%02x fifo=0x%02x int=0x%02x intclr1=0x%02x (GoTx failed)",
+            static_cast<unsigned>(_lastTxDiag.stage),
+            static_cast<unsigned>(_lastTxDiag.payloadLen),
+            static_cast<unsigned>(_lastTxDiag.channel),
+            static_cast<unsigned>(_lastTxDiag.modeSta),
+            static_cast<unsigned>(_lastTxDiag.fifoFlag),
+            static_cast<unsigned>(_lastTxDiag.intFlag),
+            static_cast<unsigned>(_lastTxDiag.intClr1));
         return false;
     }
 
     uint32_t timer = millis();
+    _lastTxDiag.stage = 5;
 
     while (!(CMT2300A_MASK_TX_DONE_FLG & CMT2300A_ReadReg(CMT2300A_CUS_INT_CLR1))) {
         if (millis() - timer > 95) {
+            _lastTxDiag.stage = 6;
+            _lastTxDiag.modeSta = CMT2300A_ReadReg(CMT2300A_CUS_MODE_STA);
+            _lastTxDiag.intFlag = CMT2300A_ReadReg(CMT2300A_CUS_INT_FLAG);
+            _lastTxDiag.intClr1 = CMT2300A_ReadReg(CMT2300A_CUS_INT_CLR1);
+            _lastTxDiag.fifoFlag = CMT2300A_ReadReg(CMT2300A_CUS_FIFO_FLAG);
+            ESP_LOGE(TAG,
+                "TX fail stage=%u len=%u ch=%u mode=0x%02x fifo=0x%02x int=0x%02x intclr1=0x%02x (TX_DONE timeout)",
+                static_cast<unsigned>(_lastTxDiag.stage),
+                static_cast<unsigned>(_lastTxDiag.payloadLen),
+                static_cast<unsigned>(_lastTxDiag.channel),
+                static_cast<unsigned>(_lastTxDiag.modeSta),
+                static_cast<unsigned>(_lastTxDiag.fifoFlag),
+                static_cast<unsigned>(_lastTxDiag.intFlag),
+                static_cast<unsigned>(_lastTxDiag.intClr1));
             return false;
         }
     }
+
+    _lastTxDiag.stage = 7;
+    _lastTxDiag.modeSta = CMT2300A_ReadReg(CMT2300A_CUS_MODE_STA);
+    _lastTxDiag.intFlag = CMT2300A_ReadReg(CMT2300A_CUS_INT_FLAG);
+    _lastTxDiag.intClr1 = CMT2300A_ReadReg(CMT2300A_CUS_INT_CLR1);
+    _lastTxDiag.fifoFlag = CMT2300A_ReadReg(CMT2300A_CUS_FIFO_FLAG);
 
     CMT2300A_ClearInterruptFlags();
     CMT2300A_GoSleep();
 
     return true;
+}
+
+const CMT2300A::TxDiag& CMT2300A::getLastTxDiag() const
+{
+    return _lastTxDiag;
 }
 
 void CMT2300A::setChannel(const uint8_t channel)
@@ -274,6 +341,7 @@ bool CMT2300A::_init_pins()
 bool CMT2300A::_init_radio()
 {
     if (!CMT2300A_Init()) {
+        ESP_LOGE("cmt2300", "_init_radio: CMT2300A_Init failed");
         return false;
     }
 
@@ -323,6 +391,10 @@ bool CMT2300A::_init_radio()
 
     /* Go to sleep for configuration to take effect */
     if (!CMT2300A_GoSleep()) {
+        ESP_LOGE("cmt2300", "_init_radio: GoSleep failed, mode_sta=0x%02x int_flag=0x%02x int_clr1=0x%02x",
+            CMT2300A_ReadReg(CMT2300A_CUS_MODE_STA),
+            CMT2300A_ReadReg(CMT2300A_CUS_INT_FLAG),
+            CMT2300A_ReadReg(CMT2300A_CUS_INT_CLR1));
         return false; // CMT2300A not switched to sleep mode!
     }
 

@@ -12,6 +12,7 @@ class MeanwellCanClass {
 public:
     void init();
     bool isEnabled() const;
+    void setIoSuspended(bool suspended);
     void appendStatusJson(JsonObject& root) const;
     bool queueCanFrameFromJson(JsonVariantConst frameJson, String& error);
 
@@ -83,6 +84,7 @@ private:
     void resetController();
 
     bool _enabled = false;
+    volatile bool _ioSuspended = false;
     bool _configured = false;
     bool _controllerResponsive = false;
     bool _controllerInNormalMode = false;

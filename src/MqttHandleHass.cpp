@@ -517,7 +517,7 @@ void MqttHandleHassClass::publishMeanwellNpb450Config()
         "meanwell/npb450/status/address",
         "meanwell/npb450/config/address",
         0.0f,
-        15.0f,
+        3.0f,
         1.0f,
         "",
         "mdi:identifier",

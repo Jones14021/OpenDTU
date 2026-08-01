@@ -61,7 +61,7 @@ private:
     void runNpb450StateMachine();
     void publishNpb450State();
 
-    bool sendNpb450Command(uint16_t command, uint16_t data);
+    bool sendNpb450Command(uint16_t command, uint16_t data, bool hasParameter = true);
     bool requestNpb450Register(uint16_t command);
     bool setNpb450EepromLock();
     bool applyNpb450Setpoints();

@@ -3,6 +3,7 @@
  * Copyright (C) 2022-2026 Thomas Basler and others
  */
 #include "MeanwellCan.h"
+#include "Configuration.h"
 #include "MqttSettings.h"
 #include "PinMapping.h"
 #include <HoymilesRadio.h>
@@ -87,6 +88,15 @@ constexpr uint32_t NPB_STATE_PUBLISH_INTERVAL_MS = 2000;
 constexpr uint32_t MCP_HEALTH_CHECK_INTERVAL_MS = 1000;
 constexpr uint32_t NPB_INIT_TIMEOUT_MS = 30000;
 
+uint8_t npbPayloadLength(const uint16_t command, const bool hasParameter)
+{
+    if (!hasParameter) {
+        return 0;
+    }
+
+    return command == NPB_CMD_OPERATION ? 1 : 2;
+}
+
 uint16_t readU16Be(const uint8_t* data)
 {
     return (static_cast<uint16_t>(data[0]) << 8) | data[1];
@@ -130,6 +140,7 @@ void MeanwellCanClass::init()
     _pinMiso = pinMapping.can_miso;
     _pinCs = pinMapping.can_cs;
     _pinInt = pinMapping.can_int;
+    _npbAddress = std::min<uint8_t>(0x03, Configuration.get().Meanwell.Npb450CanAddress);
 
     pinMode(_pinCs, OUTPUT);
     digitalWrite(_pinCs, HIGH);
@@ -233,7 +244,7 @@ void MeanwellCanClass::init()
             ESP_LOGW(TAG, "Ignoring invalid meanwell/npb450/config/address payload");
             return;
         }
-        _npbAddress = static_cast<uint8_t>(std::clamp(address, 0.0f, 15.0f));
+        _npbAddress = static_cast<uint8_t>(std::clamp(address, 0.0f, 3.0f));
     });
 
     const String abstractCommissionTopic = MqttSettings.getPrefix() + "meanwell/npb450/control/commission_psu";
@@ -726,23 +737,27 @@ bool MeanwellCanClass::sendFrame(const CanFrame& frame)
     return true;
 }
 
-bool MeanwellCanClass::sendNpb450Command(uint16_t command, uint16_t data)
+bool MeanwellCanClass::sendNpb450Command(uint16_t command, uint16_t data, bool hasParameter)
 {
     CanFrame frame;
     frame.id = getNpb450ControllerId();
     frame.isExtended = true;
     frame.isRemoteRequest = false;
-    frame.dlc = 4;
+    frame.dlc = 2 + npbPayloadLength(command, hasParameter);
     frame.data[0] = static_cast<uint8_t>(command & 0xFF);
     frame.data[1] = static_cast<uint8_t>((command >> 8) & 0xFF);
-    frame.data[2] = static_cast<uint8_t>(data & 0xFF);
-    frame.data[3] = static_cast<uint8_t>((data >> 8) & 0xFF);
+    if (hasParameter) {
+        frame.data[2] = static_cast<uint8_t>(data & 0xFF);
+        if (frame.dlc == 4) {
+            frame.data[3] = static_cast<uint8_t>((data >> 8) & 0xFF);
+        }
+    }
     return sendFrame(frame);
 }
 
 bool MeanwellCanClass::requestNpb450Register(uint16_t command)
 {
-    return sendNpb450Command(command, 0x0000);
+    return sendNpb450Command(command, 0x0000, false);
 }
 
 bool MeanwellCanClass::setNpb450EepromLock()

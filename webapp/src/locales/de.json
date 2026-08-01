@@ -740,7 +740,10 @@
         "fr": "Französisch",
         "Leds": "LEDs",
         "EqualBrightness": "Gleiche Helligkeit",
-        "LedBrightness": "LED {led} Helligkeit ({brightness})"
+        "LedBrightness": "LED {led} Helligkeit ({brightness})",
+        "Meanwell": "Mean Well",
+        "Npb450CanAddress": "NPB-450 CAN-Adresse",
+        "Npb450CanAddressHint": "Die Kommunikationsadresse des NPB-450 als Hexadezimalwert von 0x00 bis 0x03 eingeben. Der Standardwert ist 0x03."
     },
     "pininfo": {
         "Category": "Kategorie",

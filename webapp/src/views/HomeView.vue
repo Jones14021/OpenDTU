@@ -1309,30 +1309,31 @@ export default defineComponent({
         },
         onApplyCanPreset() {
             const address = this.liveData.charger?.npb450?.address ?? 0;
-            const controllerId = 0x000c0100 + Math.min(Math.max(address, 0), 15);
-            const applyPreset = (cmd: number, value: number) => {
+            const controllerId = 0x000c0100 + Math.min(Math.max(address, 0), 3);
+            const applyPreset = (cmd: number, value?: number) => {
                 this.canFrameForm.ext = true;
                 this.canFrameForm.rtr = false;
                 this.canFrameForm.idHex = `0x${controllerId.toString(16).toUpperCase()}`;
-                this.canFrameForm.dlc = 4;
-                const bytes = [
-                    cmd & 0xff,
-                    (cmd >> 8) & 0xff,
-                    value & 0xff,
-                    (value >> 8) & 0xff,
-                ];
+                const bytes = [cmd & 0xff, (cmd >> 8) & 0xff];
+                if (value !== undefined) {
+                    bytes.push(value & 0xff);
+                    if (cmd !== 0x0000) {
+                        bytes.push((value >> 8) & 0xff);
+                    }
+                }
+                this.canFrameForm.dlc = bytes.length;
                 this.canFrameForm.dataHex = bytes.map((v) => v.toString(16).toUpperCase().padStart(2, '0')).join(' ');
             };
 
             switch (this.selectedCanPreset) {
                 case 'npb_read_iout':
-                    applyPreset(0x0061, 0x0000);
+                    applyPreset(0x0061);
                     break;
                 case 'npb_read_status':
-                    applyPreset(0x00c1, 0x0000);
+                    applyPreset(0x00c1);
                     break;
                 case 'npb_read_config':
-                    applyPreset(0x00c2, 0x0000);
+                    applyPreset(0x00c2);
                     break;
                 case 'npb_operation_on':
                     applyPreset(0x0000, 0x0001);

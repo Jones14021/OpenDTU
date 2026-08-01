@@ -11,6 +11,32 @@
 #include "WebApi_errors.h"
 #include "helper.h"
 #include <AsyncJson.h>
+#include <cstdlib>
+
+namespace {
+bool parseNpb450CanAddress(const String& addressText, uint8_t& address)
+{
+    if (!addressText.startsWith("0x") && !addressText.startsWith("0X")) {
+        return false;
+    }
+
+    const char* digits = addressText.c_str() + 2;
+    char* end = nullptr;
+    const unsigned long parsed = strtoul(digits, &end, 16);
+    if (end == digits || *end != '\0' || parsed > 0x03) {
+        return false;
+    }
+
+    address = static_cast<uint8_t>(parsed);
+    return true;
+}
+
+String formatNpb450CanAddress(const uint8_t address)
+{
+    String formatted = "0x0" + String(address, HEX);
+    return formatted;
+}
+} // namespace
 
 void WebApiDeviceClass::init(AsyncWebServer& server, Scheduler& scheduler)
 {
@@ -97,6 +123,9 @@ void WebApiDeviceClass::onDeviceAdminGet(AsyncWebServerRequest* request)
     display["diagramduration"] = config.Display.Diagram.Duration;
     display["diagrammode"] = config.Display.Diagram.Mode;
 
+    auto meanwell = root["meanwell"].to<JsonObject>();
+    meanwell["npb450_can_address"] = formatNpb450CanAddress(config.Meanwell.Npb450CanAddress);
+
     auto leds = root["led"].to<JsonArray>();
     for (uint8_t i = 0; i < PINMAPPING_LED_COUNT; i++) {
         auto led = leds.add<JsonObject>();
@@ -121,7 +150,8 @@ void WebApiDeviceClass::onDeviceAdminPost(AsyncWebServerRequest* request)
     auto& retMsg = response->getRoot();
 
     if (!(root["curPin"].is<JsonObject>()
-            || root["display"].is<JsonObject>())) {
+            || root["display"].is<JsonObject>()
+            || root["meanwell"].is<JsonObject>())) {
         retMsg["message"] = "Values are missing!";
         retMsg["code"] = WebApiError::GenericValueMissing;
         WebApi.sendJsonResponse(request, response, __FUNCTION__, __LINE__);
@@ -132,6 +162,14 @@ void WebApiDeviceClass::onDeviceAdminPost(AsyncWebServerRequest* request)
         retMsg["message"] = "Pin mapping must between 1 and " STR_EXTRACT(DEV_MAX_MAPPING_NAME_STRLEN) " characters long!";
         retMsg["code"] = WebApiError::HardwarePinMappingLength;
         retMsg["param"]["max"] = DEV_MAX_MAPPING_NAME_STRLEN;
+        WebApi.sendJsonResponse(request, response, __FUNCTION__, __LINE__);
+        return;
+    }
+
+    uint8_t npb450CanAddress = 0;
+    if (!parseNpb450CanAddress(root["meanwell"]["npb450_can_address"].as<String>(), npb450CanAddress)) {
+        retMsg["message"] = "NPB-450 CAN address must be a hexadecimal value from 0x00 to 0x03!";
+        retMsg["code"] = WebApiError::GenericValueMissing;
         WebApi.sendJsonResponse(request, response, __FUNCTION__, __LINE__);
         return;
     }
@@ -152,6 +190,7 @@ void WebApiDeviceClass::onDeviceAdminPost(AsyncWebServerRequest* request)
         strlcpy(config.Display.Locale, root["display"]["locale"].as<String>().c_str(), sizeof(config.Display.Locale));
         config.Display.Diagram.Duration = root["display"]["diagramduration"].as<uint32_t>();
         config.Display.Diagram.Mode = root["display"]["diagrammode"].as<DiagramMode_t>();
+        config.Meanwell.Npb450CanAddress = npb450CanAddress;
 
         for (uint8_t i = 0; i < PINMAPPING_LED_COUNT; i++) {
             config.Led_Single[i].Brightness = root["led"][i]["brightness"].as<uint8_t>();

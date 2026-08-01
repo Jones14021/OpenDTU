@@ -46,6 +46,17 @@
                     >
                         {{ $t('deviceadmin.Leds') }}
                     </button>
+                    <button
+                        class="nav-link"
+                        id="nav-meanwell-tab"
+                        data-bs-toggle="tab"
+                        data-bs-target="#nav-meanwell"
+                        type="button"
+                        role="tab"
+                        aria-controls="nav-meanwell"
+                    >
+                        {{ $t('deviceadmin.Meanwell') }}
+                    </button>
                 </div>
             </nav>
             <div class="tab-content" id="nav-tabContent">
@@ -248,6 +259,25 @@
                                     />
                                 </div>
                             </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div
+                    class="tab-pane fade show"
+                    id="nav-meanwell"
+                    role="tabpanel"
+                    aria-labelledby="nav-meanwell-tab"
+                    tabindex="0"
+                >
+                    <div class="card card-tabbed">
+                        <div class="card-body">
+                            <InputElement
+                                :label="$t('deviceadmin.Npb450CanAddress')"
+                                v-model="deviceConfigList.meanwell.npb450_can_address"
+                                type="text"
+                                :tooltip="$t('deviceadmin.Npb450CanAddressHint')"
+                            />
                         </div>
                     </div>
                 </div>

@@ -133,6 +133,9 @@ bool ConfigurationClass::write()
         led["brightness"] = config.Led_Single[i].Brightness;
     }
 
+    JsonObject meanwell = device["meanwell"].to<JsonObject>();
+    meanwell["npb450_can_address"] = config.Meanwell.Npb450CanAddress;
+
     JsonArray inverters = doc["inverters"].to<JsonArray>();
     for (uint8_t i = 0; i < INV_MAX_COUNT; i++) {
         JsonObject inv = inverters.add<JsonObject>();
@@ -322,6 +325,9 @@ bool ConfigurationClass::read()
         config.Led_Single[i].Brightness = led["brightness"] | LED_BRIGHTNESS;
     }
 
+    JsonObject meanwell = device["meanwell"];
+    config.Meanwell.Npb450CanAddress = min<uint8_t>(3, meanwell["npb450_can_address"] | 3);
+
     JsonArray inverters = doc["inverters"];
     for (uint8_t i = 0; i < INV_MAX_COUNT; i++) {
         JsonObject inv = inverters[i].as<JsonObject>();
@@ -457,6 +463,10 @@ void ConfigurationClass::migrate()
         config.Logging.Default = ESP_LOG_VERBOSE;
         strlcpy(config.Logging.Modules[0].Name, "CORE", sizeof(config.Logging.Modules[0].Name));
         config.Logging.Modules[0].Level = ESP_LOG_ERROR;
+    }
+
+    if (config.Cfg.Version < 0x00012000) {
+        config.Meanwell.Npb450CanAddress = 0x03;
     }
 
     f.close();

@@ -643,6 +643,15 @@ void MqttHandleHassClass::publishMeanwellNpb450Config()
         CATEGORY_NONE);
 
     publishMeanwellNpb450Sensor(
+        "Input Energy Estimate",
+        "meanwell/npb450/status/input_energy_estimate",
+        "kWh",
+        "mdi:transmission-tower",
+        DEVICE_CLS_ENERGY,
+        STATE_CLS_TOTAL_INCREASING,
+        CATEGORY_NONE);
+
+    publishMeanwellNpb450Sensor(
         "Output Efficiency",
         "meanwell/npb450/status/output_efficiency",
         "%",
@@ -703,6 +712,7 @@ void MqttHandleHassClass::clearMeanwellNpb450Config()
     publish("sensor/" + root + "/output_current/config", "");
     publish("sensor/" + root + "/output_power/config", "");
     publish("sensor/" + root + "/output_energy/config", "");
+    publish("sensor/" + root + "/input_energy_estimate/config", "");
     publish("sensor/" + root + "/output_efficiency/config", "");
     publish("sensor/" + root + "/temperature/config", "");
     publish("sensor/" + root + "/state_word/config", "");

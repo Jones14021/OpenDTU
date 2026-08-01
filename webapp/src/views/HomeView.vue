@@ -1064,7 +1064,7 @@ export default defineComponent({
         },
         chargerCanLog(): CanLogEntry[] {
             const log = this.liveData.charger?.can_log || [];
-            return log.slice().reverse();
+            return log.slice(-5).reverse();
         },
         commissioningPollSeconds(): number {
             this.commissioningPollTick;
@@ -1561,6 +1561,7 @@ export default defineComponent({
         },
         formatCanFlags(entry: CanLogEntry): string {
             const flags: string[] = [];
+            flags.push(entry.tx ? 'TX' : 'RX');
             flags.push(entry.ext ? 'EXT' : 'STD');
             if (entry.rtr) {
                 flags.push('RTR');

@@ -38,8 +38,9 @@ private:
 
     struct CanLogEntry {
         uint32_t timestampMs = 0;
+        bool transmitted = false;
         CanFrame frame;
-        char meaning[96] = { 0 };
+        char meaning[128] = { 0 };
     };
 
     static void taskEntry(void* param);
@@ -53,7 +54,7 @@ private:
     bool sendFrame(const CanFrame& frame);
     bool enqueueFrame(const CanFrame& frame);
     bool dequeueFrame(CanFrame& frame);
-    void appendCanLogEntry(const CanFrame& frame);
+    void appendCanLogEntry(const CanFrame& frame, bool transmitted);
     String interpretFrame(const CanFrame& frame) const;
     void handleFrame(const CanFrame& frame);
     void decodeMeanwellPbn(const CanFrame& frame);
@@ -118,6 +119,7 @@ private:
     float _npbMeasuredVoltage = 0.0f;
     float _npbMeasuredCurrent = 0.0f;
     float _npbOutputEnergyKWh = 0.0f;
+    float _npbInputEnergyEstimateKWh = 0.0f;
     bool _npbPsuModeOk = false;
     bool _npbEepromLockOk = false;
     bool _npbValidationSeen = false;

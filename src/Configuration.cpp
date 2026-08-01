@@ -138,6 +138,7 @@ bool ConfigurationClass::write()
     meanwell["npb450_target_power_min"] = config.Meanwell.Npb450TargetPowerMin;
     meanwell["npb450_target_power_max"] = config.Meanwell.Npb450TargetPowerMax;
     meanwell["npb450_output_energy_kwh"] = config.Meanwell.Npb450OutputEnergyKWh;
+    meanwell["npb450_input_energy_estimate_kwh"] = config.Meanwell.Npb450InputEnergyEstimateKWh;
 
     JsonArray inverters = doc["inverters"].to<JsonArray>();
     for (uint8_t i = 0; i < INV_MAX_COUNT; i++) {
@@ -333,6 +334,7 @@ bool ConfigurationClass::read()
     config.Meanwell.Npb450TargetPowerMin = std::clamp<uint16_t>(meanwell["npb450_target_power_min"] | 75, 75, 360);
     config.Meanwell.Npb450TargetPowerMax = std::clamp<uint16_t>(meanwell["npb450_target_power_max"] | 360, config.Meanwell.Npb450TargetPowerMin, 360);
     config.Meanwell.Npb450OutputEnergyKWh = std::max(0.0f, meanwell["npb450_output_energy_kwh"] | 0.0f);
+    config.Meanwell.Npb450InputEnergyEstimateKWh = std::max(0.0f, meanwell["npb450_input_energy_estimate_kwh"] | 0.0f);
 
     JsonArray inverters = doc["inverters"];
     for (uint8_t i = 0; i < INV_MAX_COUNT; i++) {
@@ -479,6 +481,10 @@ void ConfigurationClass::migrate()
         config.Meanwell.Npb450TargetPowerMin = 75;
         config.Meanwell.Npb450TargetPowerMax = 360;
         config.Meanwell.Npb450OutputEnergyKWh = 0.0f;
+    }
+
+    if (config.Cfg.Version < 0x00012200) {
+        config.Meanwell.Npb450InputEnergyEstimateKWh = 0.0f;
     }
 
     f.close();

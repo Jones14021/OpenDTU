@@ -127,6 +127,7 @@ export interface Mcp2515Status {
 
 export interface CanLogEntry {
     timestamp_ms: number;
+    tx: boolean;
     id: number;
     ext: boolean;
     rtr: boolean;

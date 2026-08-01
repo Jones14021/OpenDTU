@@ -146,6 +146,7 @@ void MeanwellCanClass::init()
     _pinInt = pinMapping.can_int;
     _npbAddress = std::min<uint8_t>(0x03, Configuration.get().Meanwell.Npb450CanAddress);
     _npbOutputEnergyKWh = Configuration.get().Meanwell.Npb450OutputEnergyKWh;
+    _npbInputEnergyEstimateKWh = Configuration.get().Meanwell.Npb450InputEnergyEstimateKWh;
     _npbTargetWatts = Configuration.get().Meanwell.Npb450TargetPowerMin;
 
     pinMode(_pinCs, OUTPUT);
@@ -425,6 +426,7 @@ void MeanwellCanClass::appendStatusJson(JsonObject& root) const
     npbObj["iout_actual_seen"] = _npbMeasuredCurrentSeen;
     npbObj["output_power_w"] = _npbMeasuredVoltage * _npbMeasuredCurrent;
     npbObj["output_energy_kwh"] = _npbOutputEnergyKWh;
+    npbObj["input_energy_estimate_kwh"] = _npbInputEnergyEstimateKWh;
     npbObj["efficiency_percent"] = _npbTargetWatts > 0.0f ? (_npbMeasuredVoltage * _npbMeasuredCurrent / _npbTargetWatts) * 100.0f : 0.0f;
     npbObj["psu_mode_ok"] = _npbPsuModeOk;
     npbObj["eeprom_lock_ok"] = _npbEepromLockOk;
@@ -471,6 +473,7 @@ void MeanwellCanClass::appendStatusJson(JsonObject& root) const
         const auto& entry = _canLog[index];
         auto row = canLogObj.add<JsonObject>();
         row["timestamp_ms"] = entry.timestampMs;
+        row["tx"] = entry.transmitted;
         row["id"] = entry.frame.id;
         row["ext"] = entry.frame.isExtended;
         row["rtr"] = entry.frame.isRemoteRequest;
@@ -500,6 +503,7 @@ void MeanwellCanClass::taskLoop()
         if (_hasPendingTxFrame) {
             const bool isNpbCommand = _pendingTxFrame.isExtended && _pendingTxFrame.id == getNpb450ControllerId();
             if ((!isNpbCommand || millis() >= _nextNpbTxMs) && sendFrame(_pendingTxFrame)) {
+                appendCanLogEntry(_pendingTxFrame, true);
                 if (isNpbCommand) {
                     _nextNpbTxMs = millis() + NPB_MIN_REQUEST_INTERVAL_MS;
                 }
@@ -512,8 +516,11 @@ void MeanwellCanClass::taskLoop()
                 if ((isNpbCommand && millis() < _nextNpbTxMs) || !sendFrame(txFrame)) {
                     _pendingTxFrame = txFrame;
                     _hasPendingTxFrame = true;
-                } else if (isNpbCommand) {
-                    _nextNpbTxMs = millis() + NPB_MIN_REQUEST_INTERVAL_MS;
+                } else {
+                    appendCanLogEntry(txFrame, true);
+                    if (isNpbCommand) {
+                        _nextNpbTxMs = millis() + NPB_MIN_REQUEST_INTERVAL_MS;
+                    }
                 }
             }
         }
@@ -853,13 +860,18 @@ void MeanwellCanClass::updateNpbOutputEnergy()
     const uint32_t now = millis();
     if (_lastEnergyUpdateMs != 0) {
         const uint32_t elapsedMs = now - _lastEnergyUpdateMs;
-        _npbOutputEnergyKWh += (_npbMeasuredVoltage * _npbMeasuredCurrent * elapsedMs) / 3600000000.0f;
+        const float outputPowerWatts = _npbMeasuredVoltage * _npbMeasuredCurrent;
+        if (outputPowerWatts > 0.0f) {
+            _npbOutputEnergyKWh += (outputPowerWatts * elapsedMs) / 3600000000.0f;
+            _npbInputEnergyEstimateKWh += (_npbTargetWatts * elapsedMs) / 3600000000.0f;
+        }
     }
     _lastEnergyUpdateMs = now;
 
     if (_lastEnergyPersistMs == 0 || now - _lastEnergyPersistMs >= NPB_ENERGY_PERSIST_INTERVAL_MS) {
         auto guard = Configuration.getWriteGuard();
         guard.getConfig().Meanwell.Npb450OutputEnergyKWh = _npbOutputEnergyKWh;
+        guard.getConfig().Meanwell.Npb450InputEnergyEstimateKWh = _npbInputEnergyEstimateKWh;
         Configuration.write();
         _lastEnergyPersistMs = now;
     }
@@ -884,15 +896,16 @@ void MeanwellCanClass::handleFrame(const CanFrame& frame)
         MqttSettings.publish("meanwell/can/rx", payload);
     }
 
-    appendCanLogEntry(frame);
+    appendCanLogEntry(frame, false);
     handleNpb450Frame(frame);
     decodeMeanwellPbn(frame);
 }
 
-void MeanwellCanClass::appendCanLogEntry(const CanFrame& frame)
+void MeanwellCanClass::appendCanLogEntry(const CanFrame& frame, const bool transmitted)
 {
     CanLogEntry entry;
     entry.timestampMs = millis();
+    entry.transmitted = transmitted;
     entry.frame = frame;
     const String meaning = interpretFrame(frame);
     meaning.toCharArray(entry.meaning, sizeof(entry.meaning));
@@ -909,31 +922,53 @@ void MeanwellCanClass::appendCanLogEntry(const CanFrame& frame)
 String MeanwellCanClass::interpretFrame(const CanFrame& frame) const
 {
     if (!frame.isExtended) {
+        if (frame.dlc < 4) {
+            return "Standard CAN frame (payload too short to decode)";
+        }
         switch (frame.id) {
-        case 0x305:
-            return "PBN charger output voltage/current";
-        case 0x306:
-            return "PBN battery voltage/current";
+        case 0x305: {
+            const float voltage = readU16Be(&frame.data[0]) / 10.0f;
+            const float current = readU16Be(&frame.data[2]) / 10.0f;
+            return "PBN charger output: " + String(voltage, 1) + " V, " + String(current, 1) + " A";
+        }
+        case 0x306: {
+            const float voltage = readU16Be(&frame.data[0]) / 10.0f;
+            const float current = readS16Be(&frame.data[2]) / 10.0f;
+            return "PBN battery: " + String(voltage, 1) + " V, " + String(current, 1) + " A";
+        }
         case 0x307:
-            return "PBN charger temperature/state word";
+            return "PBN charger: " + String(readS16Be(&frame.data[0]) / 10.0f, 1) + " C, state=0x" + String(readU16Be(&frame.data[2]), HEX);
         case 0x30A:
-            return "PBN charger alarm word";
+            return "PBN charger alarm word=0x" + String(readU16Be(&frame.data[0]), HEX);
         default:
             return "Unknown standard CAN frame";
         }
     }
 
-    if (frame.id == getNpb450ChargerToControllerId() && frame.dlc >= 4) {
+    if ((frame.id == getNpb450ControllerId() || frame.id == getNpb450ChargerToControllerId()) && frame.dlc >= 2) {
         const uint16_t command = static_cast<uint16_t>(frame.data[0]) | (static_cast<uint16_t>(frame.data[1]) << 8);
+        const bool response = frame.id == getNpb450ChargerToControllerId();
+        const uint16_t value = frame.dlc >= 4 ? static_cast<uint16_t>(frame.data[2]) | (static_cast<uint16_t>(frame.data[3]) << 8) : 0;
+        const String direction = response ? "NPB450 RX " : "NPB450 TX ";
         switch (command) {
         case NPB_CMD_SYSTEM_STATUS:
-            return "NPB450 system status response";
+            return response ? direction + "system status=0x" + String(value, HEX) : direction + "read system status";
         case NPB_CMD_SYSTEM_CONFIG:
-            return "NPB450 system config response";
+            return response ? direction + "system config=0x" + String(value, HEX) + ((value & NPB_DATA_SYSTEM_CONFIG_EEPOFF) ? " (EEPROM locked)" : " (EEPROM unlocked)") : direction + "set/read system config";
+        case NPB_CMD_CURVE_CONFIG:
+            return response ? direction + "curve config=0x" + String(value, HEX) + ((value & 0x0080U) ? " (charger mode)" : " (PSU mode)") : direction + "set/read curve config";
+        case NPB_CMD_OPERATION:
+            return direction + (value == NPB_DATA_OPERATION_ON ? "operation ON" : "operation OFF");
+        case NPB_CMD_VOUT_SET:
+            return direction + (response ? "output voltage response: " : "set output voltage: ") + String(value / 100.0f, 2) + " V";
+        case NPB_CMD_IOUT_SET:
+            return direction + (response ? "output current response: " : "set output current: ") + String(value / 100.0f, 2) + " A";
+        case NPB_CMD_READ_VOUT:
+            return response ? direction + "output voltage: " + String(value / 100.0f, 2) + " V" : direction + "read output voltage";
         case NPB_CMD_READ_IOUT:
-            return "NPB450 output current response";
+            return response ? direction + "output current: " + String(value / 100.0f, 2) + " A" : direction + "read output current";
         default:
-            return "NPB450 extended response";
+            return direction + "command=0x" + String(command, HEX) + (frame.dlc >= 4 ? " value=0x" + String(value, HEX) : "");
         }
     }
 
@@ -1102,6 +1137,7 @@ void MeanwellCanClass::publishNpb450State()
     publishMetric("meanwell/npb450/status/iout_actual", _npbMeasuredCurrent, 2);
     publishMetric("meanwell/npb450/status/output_power", _npbMeasuredVoltage * _npbMeasuredCurrent, 2);
     publishMetric("meanwell/npb450/status/output_energy", _npbOutputEnergyKWh, 5);
+    publishMetric("meanwell/npb450/status/input_energy_estimate", _npbInputEnergyEstimateKWh, 5);
     publishMetric("meanwell/npb450/status/output_efficiency", _npbTargetWatts > 0.0f ? (_npbMeasuredVoltage * _npbMeasuredCurrent / _npbTargetWatts) * 100.0f : 0.0f, 1);
     MqttSettings.publish("meanwell/npb450/status/psu_mode_ok", _npbPsuModeOk ? "1" : "0");
     MqttSettings.publish("meanwell/npb450/status/eeprom_lock_ok", _npbEepromLockOk ? "1" : "0");

@@ -8,7 +8,7 @@
 #include <mutex>
 
 #define CONFIG_FILENAME "/config.json"
-#define CONFIG_VERSION 0x00012100 // 0.1.33 // make sure to clean all after change
+#define CONFIG_VERSION 0x00012200 // 0.1.34 // make sure to clean all after change
 
 #define WIFI_MAX_SSID_STRLEN 32
 #define WIFI_MAX_PASSWORD_STRLEN 64
@@ -173,6 +173,7 @@ struct CONFIG_T {
         uint16_t Npb450TargetPowerMin;
         uint16_t Npb450TargetPowerMax;
         float Npb450OutputEnergyKWh;
+        float Npb450InputEnergyEstimateKWh;
     } Meanwell;
 
     INVERTER_CONFIG_T Inverter[INV_MAX_COUNT];

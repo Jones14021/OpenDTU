@@ -230,7 +230,18 @@
         "NpbInit_set_eeprom_lock": "Setze EEPROM-Sperre",
         "NpbInit_request_validation": "Validierung läuft",
         "NpbInit_ready": "NPB bereit",
-        "NpbInit_fault": "NPB Fehler"
+        "NpbInit_fault": "NPB Fehler",
+        "CommissionPsuMode": "PSU-Modus einrichten",
+        "PsuModeRequiredWarning": "Der NPB-450 befindet sich im Lademodus. Der PSU-Modus muss eingerichtet werden, bevor OpenDTU den Ausgang steuern kann.",
+        "OpenPsuCommissionDialog": "Einrichtungsassistent öffnen",
+        "PsuCommissionVerified": "Der PSU-Modus ist aktiv und wurde bestätigt.",
+        "PsuCommissionPowerCycleRequired": "Der Einrichtungsbefehl für den PSU-Modus wurde gesendet. Schalten Sie den AC-Eingang des Ladegeräts aus und wieder ein; dieser Dialog bestätigt den PSU-Modus anschließend automatisch.",
+        "PsuCommissionNextPoll": "Nächste CURVE_CONFIG-Prüfung in {seconds} s.",
+        "PsuCommissionExplanation": "Der NPB-450 startet im Lademodus. OpenDTU benötigt den PSU-Modus, um Ausgangsspannung und -strom sicher einzustellen.",
+        "PsuCommissionStepSend": "Senden Sie den Einrichtungsbefehl für den PSU-Modus.",
+        "PsuCommissionStepPowerCycle": "Trennen Sie den AC-Eingang des Ladegeräts und stellen Sie ihn wieder her, damit der neue Modus wirksam wird.",
+        "PsuCommissionStepVerify": "Warten Sie, bis OpenDTU CURVE_CONFIG liest und den PSU-Modus bestätigt.",
+        "SendPsuCommissionCommand": "Einrichtungsbefehl senden"
     },
     "eventlog": {
         "Start": "Beginn",

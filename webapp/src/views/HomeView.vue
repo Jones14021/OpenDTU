@@ -50,9 +50,26 @@
                             >
                                 {{ $t('home.CanDebug') }}
                             </button>
+                            <button
+                                type="button"
+                                class="btn btn-sm btn-outline-warning"
+                                :disabled="!liveData.charger.mcp2515?.configured || !liveData.charger.enabled || !isLogged"
+                                @click="openPsuCommissionDialog"
+                            >
+                                {{ $t('home.CommissionPsuMode') }}
+                            </button>
                         </div>
                     </div>
                     <div class="card-body">
+                        <BootstrapAlert
+                            :show="liveData.charger.enabled && liveData.charger.npb450.psu_mode_ok === false"
+                            variant="warning"
+                        >
+                            {{ $t('home.PsuModeRequiredWarning') }}
+                            <button type="button" class="btn btn-link alert-link p-0 ms-1" @click="openPsuCommissionDialog">
+                                {{ $t('home.OpenPsuCommissionDialog') }}
+                            </button>
+                        </BootstrapAlert>
                         <div class="row g-3">
                             <div class="col-lg-4">
                                 <h6 class="text-uppercase text-muted mb-2">{{ $t('home.Npb450Control') }}</h6>
@@ -673,6 +690,38 @@
         </div>
     </ModalDialog>
 
+    <ModalDialog modalId="psuCommissionView" :title="$t('home.CommissionPsuMode')">
+        <BootstrapAlert v-if="liveData.charger?.npb450?.psu_mode_ok" variant="success" :show="true">
+            {{ $t('home.PsuCommissionVerified') }}
+        </BootstrapAlert>
+        <BootstrapAlert
+            v-else-if="liveData.charger?.npb450?.commissioning_requested"
+            variant="warning"
+            :show="true"
+        >
+            {{ $t('home.PsuCommissionPowerCycleRequired') }}
+            <div class="mt-2 small">{{ $t('home.PsuCommissionNextPoll', { seconds: commissioningPollSeconds }) }}</div>
+        </BootstrapAlert>
+        <p>{{ $t('home.PsuCommissionExplanation') }}</p>
+        <ol>
+            <li>{{ $t('home.PsuCommissionStepSend') }}</li>
+            <li>{{ $t('home.PsuCommissionStepPowerCycle') }}</li>
+            <li>{{ $t('home.PsuCommissionStepVerify') }}</li>
+        </ol>
+        <div class="d-flex justify-content-end">
+            <button
+                v-if="!liveData.charger?.npb450?.psu_mode_ok && !liveData.charger?.npb450?.commissioning_requested"
+                type="button"
+                class="btn btn-warning"
+                :disabled="sendingPsuCommission || !isLogged"
+                @click="onCommissionPsuMode"
+            >
+                <span v-if="sendingPsuCommission" class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                {{ sendingPsuCommission ? $t('home.Sending') : $t('home.SendPsuCommissionCommand') }}
+            </button>
+        </div>
+    </ModalDialog>
+
     <ModalDialog modalId="eventView" :title="$t('home.EventLog')" :loading="eventLogLoading">
         <EventLog :eventLogList="eventLogList" />
     </ModalDialog>
@@ -930,11 +979,15 @@ export default defineComponent({
             showAlertPower: false,
             successCommandPower: '',
             chargerCanDebugView: {} as bootstrap.Modal,
+            psuCommissionView: {} as bootstrap.Modal,
             chargerCanLoading: false,
             alertMessageCan: '',
             alertTypeCan: 'info',
             showAlertCan: false,
             sendingCanFrame: false,
+            sendingPsuCommission: false,
+            commissioningPollTick: 0,
+            commissioningPollDeadlineMs: 0,
             selectedCanPreset: '',
             canFrameForm: {
                 idHex: '0x000',
@@ -971,6 +1024,10 @@ export default defineComponent({
         this.limitSettingView = new bootstrap.Modal('#limitSettingView');
         this.powerSettingView = new bootstrap.Modal('#powerSettingView');
         this.chargerCanDebugView = new bootstrap.Modal('#chargerCanDebugView');
+        this.psuCommissionView = new bootstrap.Modal('#psuCommissionView');
+        window.setInterval(() => {
+            this.commissioningPollTick++;
+        }, 1000);
     },
     unmounted() {
         this.socket?.close();
@@ -1015,9 +1072,17 @@ export default defineComponent({
             const log = this.liveData.charger?.can_log || [];
             return log.slice().reverse();
         },
+        commissioningPollSeconds(): number {
+            this.commissioningPollTick;
+            return Math.max(0, Math.ceil((this.commissioningPollDeadlineMs - Date.now()) / 1000));
+        },
     },
     methods: {
         isLoggedIn,
+        updateCommissioningPollDeadline() {
+            const milliseconds = this.liveData.charger?.npb450?.commissioning_next_poll_ms ?? 0;
+            this.commissioningPollDeadlineMs = Date.now() + milliseconds;
+        },
         getInitialData(triggerLoading: boolean = true) {
             if (triggerLoading) {
                 this.dataLoading = true;
@@ -1038,6 +1103,7 @@ export default defineComponent({
                         } as ChargerStatus;
                     }
                     this.liveData = data;
+                    this.updateCommissioningPollDeadline();
                     if (triggerLoading) {
                         this.dataLoading = false;
                     }
@@ -1082,6 +1148,7 @@ export default defineComponent({
                 Object.assign(this.liveData.charger.charger, newData.charger.charger || {});
                 Object.assign(this.liveData.charger.battery, newData.charger.battery || {});
                 this.liveData.charger.can_log = newData.charger.can_log || [];
+                this.updateCommissioningPollDeadline();
             }
 
             const idx = this.liveData.inverters.findIndex((i) => i.serial === newData.inverters[0].serial);
@@ -1306,6 +1373,35 @@ export default defineComponent({
         openCanDialog() {
             this.showAlertCan = false;
             this.chargerCanDebugView.show();
+        },
+        openPsuCommissionDialog() {
+            this.psuCommissionView.show();
+        },
+        onCommissionPsuMode() {
+            const address = this.liveData.charger?.npb450?.address ?? 0;
+            const controllerId = 0x000c0100 + Math.min(Math.max(address, 0), 3);
+            const formData = new FormData();
+            formData.append(
+                'data',
+                JSON.stringify({
+                    id: controllerId,
+                    ext: true,
+                    rtr: false,
+                    dlc: 4,
+                    data: [0xb4, 0x00, 0x04, 0x00],
+                }),
+            );
+
+            this.sendingPsuCommission = true;
+            fetch('/api/livedata/charger/can_tx', {
+                method: 'POST',
+                headers: authHeader(),
+                body: formData,
+            })
+                .then((response) => handleResponse(response, this.$emitter, this.$router))
+                .finally(() => {
+                    this.sendingPsuCommission = false;
+                });
         },
         onApplyCanPreset() {
             const address = this.liveData.charger?.npb450?.address ?? 0;

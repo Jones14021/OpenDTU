@@ -82,9 +82,11 @@ constexpr uint32_t NPB_BASE_CHARGER_TO_CONTROLLER = 0x000C0000;
 
 constexpr uint32_t NPB_INIT_RETRY_MS = 1000;
 constexpr uint32_t NPB_VALIDATION_RETRY_MS = 1000;
+constexpr uint32_t NPB_COMMISSIONING_POLL_INTERVAL_MS = 10000;
 constexpr uint32_t NPB_SETPOINT_INTERVAL_MS = 1000;
 constexpr uint32_t NPB_POLL_INTERVAL_MS = 1000;
 constexpr uint32_t NPB_STATE_PUBLISH_INTERVAL_MS = 2000;
+constexpr uint32_t NPB_MIN_REQUEST_INTERVAL_MS = 20;
 constexpr uint32_t MCP_HEALTH_CHECK_INTERVAL_MS = 1000;
 constexpr uint32_t NPB_INIT_TIMEOUT_MS = 30000;
 
@@ -258,6 +260,9 @@ void MeanwellCanClass::init()
         if (_npbCommissioningAllowed) {
             if (!sendNpb450Command(NPB_CMD_CURVE_CONFIG, NPB_DATA_CURVE_CONFIG_PSU)) {
                 ESP_LOGW(TAG, "Failed to send PSU commissioning command");
+            } else {
+                _npbPsuCommissioningRequested = true;
+                _nextInitActionMs = 0;
             }
             _npbCommissioningAllowed = false;
         }
@@ -270,6 +275,7 @@ void MeanwellCanClass::init()
     _nextPollActionMs = 0;
     _nextStatePublishMs = 0;
     _nextControllerHealthCheckMs = 0;
+    _nextNpbTxMs = 0;
 
     // Run at the lowest non-idle priority so this task can never delay
     // higher-priority work such as the Hoymiles CMT2300A TX polling loop
@@ -340,6 +346,12 @@ bool MeanwellCanClass::queueCanFrameFromJson(JsonVariantConst frameJson, String&
         return false;
     }
 
+    if (frame.isExtended && frame.id == getNpb450ControllerId() && frame.dlc == 4
+        && frame.data[0] == 0xB4 && frame.data[1] == 0x00 && frame.data[2] == 0x04 && frame.data[3] == 0x00) {
+        _npbPsuCommissioningRequested = true;
+        _nextInitActionMs = 0;
+    }
+
     return true;
 }
 
@@ -396,6 +408,10 @@ void MeanwellCanClass::appendStatusJson(JsonObject& root) const
     npbObj["address"] = _npbAddress;
     npbObj["validation_seen"] = _npbValidationSeen;
     npbObj["commissioning_pending"] = _npbCommissioningAllowed;
+    npbObj["commissioning_requested"] = _npbPsuCommissioningRequested;
+    npbObj["commissioning_next_poll_ms"] = _npbPsuCommissioningRequested && !_npbPsuModeOk && _nextInitActionMs > millis()
+        ? _nextInitActionMs - millis()
+        : 0;
     if (_npbSystemStatusSeen) {
         npbObj["system_status_word"] = _npbSystemStatus;
     }
@@ -459,15 +475,22 @@ void MeanwellCanClass::taskLoop()
         }
 
         if (_hasPendingTxFrame) {
-            if (sendFrame(_pendingTxFrame)) {
+            const bool isNpbCommand = _pendingTxFrame.isExtended && _pendingTxFrame.id == getNpb450ControllerId();
+            if ((!isNpbCommand || millis() >= _nextNpbTxMs) && sendFrame(_pendingTxFrame)) {
+                if (isNpbCommand) {
+                    _nextNpbTxMs = millis() + NPB_MIN_REQUEST_INTERVAL_MS;
+                }
                 _hasPendingTxFrame = false;
             }
         } else {
             CanFrame txFrame;
             if (dequeueFrame(txFrame)) {
-                if (!sendFrame(txFrame)) {
+                const bool isNpbCommand = txFrame.isExtended && txFrame.id == getNpb450ControllerId();
+                if ((isNpbCommand && millis() < _nextNpbTxMs) || !sendFrame(txFrame)) {
                     _pendingTxFrame = txFrame;
                     _hasPendingTxFrame = true;
+                } else if (isNpbCommand) {
+                    _nextNpbTxMs = millis() + NPB_MIN_REQUEST_INTERVAL_MS;
                 }
             }
         }
@@ -575,6 +598,7 @@ void MeanwellCanClass::runNpb450StateMachine()
             bool requestOk = true;
             requestOk &= requestNpb450Register(NPB_CMD_SYSTEM_STATUS);
             requestOk &= requestNpb450Register(NPB_CMD_SYSTEM_CONFIG);
+            requestOk &= requestNpb450Register(NPB_CMD_CURVE_CONFIG);
             requestOk &= requestNpb450Register(NPB_CMD_READ_IOUT);
 
             if (!requestOk) {
@@ -582,7 +606,9 @@ void MeanwellCanClass::runNpb450StateMachine()
                 return;
             }
 
-            _nextInitActionMs = now + NPB_VALIDATION_RETRY_MS;
+            _nextInitActionMs = now + (_npbPsuCommissioningRequested && !_npbPsuModeOk
+                ? NPB_COMMISSIONING_POLL_INTERVAL_MS
+                : NPB_VALIDATION_RETRY_MS);
         }
 
         if (_npbValidationSeen && _npbPsuModeOk && _npbEepromLockOk) {
@@ -597,6 +623,7 @@ void MeanwellCanClass::runNpb450StateMachine()
         if (now >= _nextPollActionMs) {
             requestNpb450Register(NPB_CMD_SYSTEM_STATUS);
             requestNpb450Register(NPB_CMD_SYSTEM_CONFIG);
+            requestNpb450Register(NPB_CMD_CURVE_CONFIG);
             requestNpb450Register(NPB_CMD_READ_IOUT);
             _nextPollActionMs = now + NPB_POLL_INTERVAL_MS;
         }
@@ -752,7 +779,8 @@ bool MeanwellCanClass::sendNpb450Command(uint16_t command, uint16_t data, bool h
             frame.data[3] = static_cast<uint8_t>((data >> 8) & 0xFF);
         }
     }
-    return sendFrame(frame);
+    ESP_LOGD(TAG, "NPB TX id=0x%05" PRIx32 " dlc=%u cmd=0x%04x data=0x%04x", frame.id, frame.dlc, command, data);
+    return enqueueFrame(frame);
 }
 
 bool MeanwellCanClass::requestNpb450Register(uint16_t command)
@@ -878,16 +906,27 @@ void MeanwellCanClass::handleNpb450Frame(const CanFrame& frame)
 
     const uint16_t command = static_cast<uint16_t>(frame.data[0]) | (static_cast<uint16_t>(frame.data[1]) << 8);
     const uint16_t value = static_cast<uint16_t>(frame.data[2]) | (static_cast<uint16_t>(frame.data[3]) << 8);
+    ESP_LOGD(TAG, "NPB RX id=0x%05" PRIx32 " dlc=%u cmd=0x%04x value=0x%04x", frame.id, frame.dlc, command, value);
 
     switch (command) {
     case NPB_CMD_SYSTEM_STATUS:
         _npbSystemStatus = value;
         _npbSystemStatusSeen = true;
-        _npbPsuModeOk = (value & 0x8000U) == 0;
         _npbValidationSeen = true;
         _lastStatusUpdateMs = millis();
         if (MqttSettings.getConnected()) {
             MqttSettings.publish("meanwell/npb450/status/system_status", String(value));
+            MqttSettings.publish("meanwell/npb450/status/psu_mode_ok", _npbPsuModeOk ? "1" : "0");
+        }
+        break;
+    case NPB_CMD_CURVE_CONFIG:
+        _npbCurveConfig = value;
+        _npbCurveConfigSeen = true;
+        _npbPsuModeOk = (value & 0x0080U) == 0;
+        ESP_LOGD(TAG, "NPB CURVE_CONFIG=0x%04x, mode=%s", value, _npbPsuModeOk ? "PSU" : "charger");
+        _npbValidationSeen = true;
+        _lastStatusUpdateMs = millis();
+        if (MqttSettings.getConnected()) {
             MqttSettings.publish("meanwell/npb450/status/psu_mode_ok", _npbPsuModeOk ? "1" : "0");
         }
         break;
@@ -1007,7 +1046,8 @@ void MeanwellCanClass::publishNpb450State()
     MqttSettings.publish("meanwell/npb450/status/address", String(_npbAddress));
     MqttSettings.publish("meanwell/npb450/status/validation_seen", _npbValidationSeen ? "1" : "0");
     MqttSettings.publish("meanwell/npb450/status/iout_actual_seen", _npbMeasuredCurrentSeen ? "1" : "0");
-    MqttSettings.publish("meanwell/npb450/status/commissioning_pending", _npbCommissioningAllowed ? "1" : "0");
+    MqttSettings.publish("meanwell/npb450/status/commissioning_pending", _npbPsuCommissioningRequested ? "1" : "0");
+    MqttSettings.publish("meanwell/npb450/status/commissioning_requested", _npbPsuCommissioningRequested ? "1" : "0");
 }
 
 bool MeanwellCanClass::parseBoolPayload(const String& payload, bool& out)

@@ -102,6 +102,7 @@ private:
     uint32_t _nextPollActionMs = 0;
     uint32_t _nextStatePublishMs = 0;
     uint32_t _nextControllerHealthCheckMs = 0;
+    uint32_t _nextNpbTxMs = 0;
     uint32_t _npbInitStartMs = 0;
     uint32_t _lastRxFrameMs = 0;
 
@@ -115,11 +116,14 @@ private:
     bool _npbEepromLockOk = false;
     bool _npbValidationSeen = false;
     bool _npbCommissioningAllowed = false;
+    bool _npbPsuCommissioningRequested = false;
     bool _npbSystemStatusSeen = false;
     bool _npbSystemConfigSeen = false;
+    bool _npbCurveConfigSeen = false;
     bool _npbMeasuredCurrentSeen = false;
     uint16_t _npbSystemStatus = 0;
     uint16_t _npbSystemConfig = 0;
+    uint16_t _npbCurveConfig = 0;
 
     bool _chargerOutputSeen = false;
     bool _batterySeen = false;

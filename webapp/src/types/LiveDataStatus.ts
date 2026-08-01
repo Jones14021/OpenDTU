@@ -75,6 +75,8 @@ export interface ChargerNpb450Status {
     address?: number;
     validation_seen?: boolean;
     commissioning_pending?: boolean;
+    commissioning_requested?: boolean;
+    commissioning_next_poll_ms?: number;
     system_status_word?: number;
     system_config_word?: number;
 }

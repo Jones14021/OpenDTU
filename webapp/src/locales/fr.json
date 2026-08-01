@@ -230,7 +230,18 @@
         "NpbInit_set_eeprom_lock": "Verrouillage EEPROM en cours",
         "NpbInit_request_validation": "Validation en cours",
         "NpbInit_ready": "NPB prêt",
-        "NpbInit_fault": "NPB en défaut"
+        "NpbInit_fault": "NPB en défaut",
+        "CommissionPsuMode": "Configurer le mode alimentation",
+        "PsuModeRequiredWarning": "Le NPB-450 est en mode chargeur. Le mode alimentation doit être configuré avant qu'OpenDTU puisse contrôler sa sortie.",
+        "OpenPsuCommissionDialog": "Ouvrir le guide de configuration",
+        "PsuCommissionVerified": "Le mode alimentation est actif et vérifié.",
+        "PsuCommissionPowerCycleRequired": "La commande de configuration du mode alimentation a été envoyée. Coupez puis rétablissez l'alimentation AC du chargeur; cette boîte de dialogue confirmera ensuite automatiquement le mode alimentation.",
+        "PsuCommissionNextPoll": "Prochaine vérification de CURVE_CONFIG dans {seconds} s.",
+        "PsuCommissionExplanation": "Le NPB-450 démarre en mode chargeur. OpenDTU requiert le mode alimentation pour régler en toute sécurité la tension et le courant de sortie.",
+        "PsuCommissionStepSend": "Envoyez la commande de configuration du mode alimentation.",
+        "PsuCommissionStepPowerCycle": "Débranchez puis rétablissez l'alimentation AC du chargeur pour appliquer le nouveau mode.",
+        "PsuCommissionStepVerify": "Attendez qu'OpenDTU lise CURVE_CONFIG et vérifie le mode alimentation.",
+        "SendPsuCommissionCommand": "Envoyer la commande de configuration"
     },
     "eventlog": {
         "Start": "Départ",

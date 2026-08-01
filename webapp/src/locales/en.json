@@ -230,7 +230,18 @@
         "NpbInit_set_eeprom_lock": "Setting EEPROM lock",
         "NpbInit_request_validation": "Validation in progress",
         "NpbInit_ready": "NPB ready",
-        "NpbInit_fault": "NPB fault"
+        "NpbInit_fault": "NPB fault",
+        "CommissionPsuMode": "Commission PSU mode",
+        "PsuModeRequiredWarning": "The NPB-450 is in charger mode. PSU mode must be commissioned before OpenDTU can control its output.",
+        "OpenPsuCommissionDialog": "Open commissioning guide",
+        "PsuCommissionVerified": "PSU mode is active and verified.",
+        "PsuCommissionPowerCycleRequired": "The PSU commissioning command was sent. Power-cycle the charger's AC input, then this dialog will confirm PSU mode automatically.",
+        "PsuCommissionNextPoll": "Next CURVE_CONFIG check in {seconds} s.",
+        "PsuCommissionExplanation": "The NPB-450 starts in charger mode. OpenDTU requires PSU mode so it can set output voltage and current safely.",
+        "PsuCommissionStepSend": "Send the PSU-mode commissioning command.",
+        "PsuCommissionStepPowerCycle": "Disconnect and restore the charger's AC input so the new mode takes effect.",
+        "PsuCommissionStepVerify": "Wait for OpenDTU to read CURVE_CONFIG and verify PSU mode.",
+        "SendPsuCommissionCommand": "Send commissioning command"
     },
     "eventlog": {
         "Start": "Start",

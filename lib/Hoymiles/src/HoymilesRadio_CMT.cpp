@@ -127,10 +127,13 @@ void HoymilesRadio_CMT::loop()
         return;
     }
 
-    if (!_gpio3_configured) {
-        if (_radio->rxFifoAvailable()) { // read INT2, PKT_OK flag
-            _packetReceived = true;
+    // GPIO3/INT2 is only an optimization. A missed edge must not leave the
+    // receiver unserviced indefinitely, because TX does not depend on GPIO3.
+    if (!_packetReceived && _radio->rxFifoAvailable()) { // read INT2, PKT_OK flag
+        if (_gpio3_configured) {
+            ESP_LOGD(TAG, "CMT RX packet-ready polled without GPIO3 interrupt");
         }
+        _packetReceived = true;
     }
 
     if (_packetReceived) {

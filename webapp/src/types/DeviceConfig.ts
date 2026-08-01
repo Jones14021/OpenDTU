@@ -16,6 +16,8 @@ export interface Led {
 
 export interface Meanwell {
     npb450_can_address: string;
+    npb450_target_power_min: number;
+    npb450_target_power_max: number;
 }
 
 export interface DeviceConfig {

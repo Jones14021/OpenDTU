@@ -92,7 +92,7 @@ private:
     static void publishMeanwellNpb450Sensor(const String& name, const String& state_topic, const String& unit_of_measure, const String& icon, const DeviceClassType device_class, const StateClassType state_class, const CategoryType category);
     static void publishMeanwellNpb450BinarySensor(const String& name, const String& state_topic, const String& payload_on, const String& payload_off, const DeviceClassType device_class, const StateClassType state_class, const CategoryType category);
     static void publishMeanwellNpb450Switch(const String& name, const String& state_topic, const String& command_topic, const String& payload_on, const String& payload_off, const String& state_on, const String& state_off, const String& icon, const CategoryType category);
-    static void publishMeanwellNpb450Number(const String& name, const String& state_topic, const String& command_topic, const float min, const float max, const float step, const String& unit_of_measure, const String& icon, const StateClassType state_class, const CategoryType category);
+    static void publishMeanwellNpb450Number(const String& name, const String& state_topic, const String& command_topic, const float min, const float max, const float step, const String& unit_of_measure, const String& icon, const StateClassType state_class, const CategoryType category, const bool slider = false);
     static void publishMeanwellNpb450Button(const String& name, const String& command_topic, const String& payload, const String& icon, const CategoryType category);
 
     static void publishInverterField(std::shared_ptr<InverterAbstract> inv, const ChannelType_t type, const ChannelNum_t channel, const byteAssign_fieldDeviceClass_t fieldType, const bool clear = false);

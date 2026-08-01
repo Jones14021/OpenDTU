@@ -278,6 +278,24 @@
                                 type="text"
                                 :tooltip="$t('deviceadmin.Npb450CanAddressHint')"
                             />
+                            <InputElement
+                                :label="$t('deviceadmin.Npb450TargetPowerMin')"
+                                v-model.number="deviceConfigList.meanwell.npb450_target_power_min"
+                                type="number"
+                                min="75"
+                                max="360"
+                                :tooltip="$t('deviceadmin.Npb450TargetPowerHint')"
+                                postfix="W"
+                            />
+                            <InputElement
+                                :label="$t('deviceadmin.Npb450TargetPowerMax')"
+                                v-model.number="deviceConfigList.meanwell.npb450_target_power_max"
+                                type="number"
+                                min="75"
+                                max="360"
+                                :tooltip="$t('deviceadmin.Npb450TargetPowerHint')"
+                                postfix="W"
+                            />
                         </div>
                     </div>
                 </div>

@@ -67,6 +67,7 @@ constexpr uint32_t RX_ACTIVE_DELAY_MS = 1;
 constexpr uint16_t NPB_CMD_OPERATION = 0x0000;
 constexpr uint16_t NPB_CMD_VOUT_SET = 0x0020;
 constexpr uint16_t NPB_CMD_IOUT_SET = 0x0030;
+constexpr uint16_t NPB_CMD_READ_VOUT = 0x0060;
 constexpr uint16_t NPB_CMD_READ_IOUT = 0x0061;
 constexpr uint16_t NPB_CMD_CURVE_CONFIG = 0x00B4;
 constexpr uint16_t NPB_CMD_SYSTEM_STATUS = 0x00C1;
@@ -87,6 +88,7 @@ constexpr uint32_t NPB_SETPOINT_INTERVAL_MS = 1000;
 constexpr uint32_t NPB_POLL_INTERVAL_MS = 1000;
 constexpr uint32_t NPB_STATE_PUBLISH_INTERVAL_MS = 2000;
 constexpr uint32_t NPB_MIN_REQUEST_INTERVAL_MS = 20;
+constexpr uint32_t NPB_ENERGY_PERSIST_INTERVAL_MS = 300000;
 constexpr uint32_t MCP_HEALTH_CHECK_INTERVAL_MS = 1000;
 constexpr uint32_t NPB_INIT_TIMEOUT_MS = 30000;
 
@@ -143,6 +145,8 @@ void MeanwellCanClass::init()
     _pinCs = pinMapping.can_cs;
     _pinInt = pinMapping.can_int;
     _npbAddress = std::min<uint8_t>(0x03, Configuration.get().Meanwell.Npb450CanAddress);
+    _npbOutputEnergyKWh = Configuration.get().Meanwell.Npb450OutputEnergyKWh;
+    _npbTargetWatts = Configuration.get().Meanwell.Npb450TargetPowerMin;
 
     pinMode(_pinCs, OUTPUT);
     digitalWrite(_pinCs, HIGH);
@@ -209,6 +213,16 @@ void MeanwellCanClass::init()
         _npbControlEnabled = enabled;
     });
 
+    const String abstractChargeEnableTopic = MqttSettings.getPrefix() + "meanwell/npb450/control/charge_enable";
+    MqttSettings.subscribe(abstractChargeEnableTopic, 0, [this](const espMqttClientTypes::MessageProperties&, const char*, const uint8_t* payload, size_t len) {
+        bool enabled = false;
+        if (!parseBoolPayload(payloadToString(payload, len), enabled)) {
+            ESP_LOGW(TAG, "Ignoring invalid meanwell/npb450/control/charge_enable payload");
+            return;
+        }
+        _npbChargeEnabled = enabled;
+    });
+
     const String abstractTargetWattsTopic = MqttSettings.getPrefix() + "meanwell/npb450/control/target_w";
     MqttSettings.subscribe(abstractTargetWattsTopic, 0, [this](const espMqttClientTypes::MessageProperties&, const char*, const uint8_t* payload, size_t len) {
         float watts = 0.0f;
@@ -216,7 +230,10 @@ void MeanwellCanClass::init()
             ESP_LOGW(TAG, "Ignoring invalid meanwell/npb450/control/target_w payload");
             return;
         }
-        _npbTargetWatts = std::max(0.0f, watts);
+        const auto& config = Configuration.get();
+        _npbTargetWatts = std::clamp(watts,
+            static_cast<float>(config.Meanwell.Npb450TargetPowerMin),
+            static_cast<float>(config.Meanwell.Npb450TargetPowerMax));
     });
 
     const String abstractConfigVoltageTopic = MqttSettings.getPrefix() + "meanwell/npb450/config/charge_voltage_v";
@@ -398,11 +415,17 @@ void MeanwellCanClass::appendStatusJson(JsonObject& root) const
     }
     npbObj["init_state"] = initState;
     npbObj["control_enabled"] = _npbControlEnabled;
+    npbObj["charge_enabled"] = _npbChargeEnabled;
     npbObj["target_w"] = _npbTargetWatts;
     npbObj["target_iout_a"] = getTargetCurrentFromPower();
     npbObj["target_vout_v"] = _npbChargeVoltage;
+    npbObj["vout_actual_v"] = _npbMeasuredVoltage;
+    npbObj["vout_actual_seen"] = _npbMeasuredVoltageSeen;
     npbObj["iout_actual_a"] = _npbMeasuredCurrent;
     npbObj["iout_actual_seen"] = _npbMeasuredCurrentSeen;
+    npbObj["output_power_w"] = _npbMeasuredVoltage * _npbMeasuredCurrent;
+    npbObj["output_energy_kwh"] = _npbOutputEnergyKWh;
+    npbObj["efficiency_percent"] = _npbTargetWatts > 0.0f ? (_npbMeasuredVoltage * _npbMeasuredCurrent / _npbTargetWatts) * 100.0f : 0.0f;
     npbObj["psu_mode_ok"] = _npbPsuModeOk;
     npbObj["eeprom_lock_ok"] = _npbEepromLockOk;
     npbObj["address"] = _npbAddress;
@@ -599,6 +622,7 @@ void MeanwellCanClass::runNpb450StateMachine()
             requestOk &= requestNpb450Register(NPB_CMD_SYSTEM_STATUS);
             requestOk &= requestNpb450Register(NPB_CMD_SYSTEM_CONFIG);
             requestOk &= requestNpb450Register(NPB_CMD_CURVE_CONFIG);
+            requestOk &= requestNpb450Register(NPB_CMD_READ_VOUT);
             requestOk &= requestNpb450Register(NPB_CMD_READ_IOUT);
 
             if (!requestOk) {
@@ -624,6 +648,7 @@ void MeanwellCanClass::runNpb450StateMachine()
             requestNpb450Register(NPB_CMD_SYSTEM_STATUS);
             requestNpb450Register(NPB_CMD_SYSTEM_CONFIG);
             requestNpb450Register(NPB_CMD_CURVE_CONFIG);
+            requestNpb450Register(NPB_CMD_READ_VOUT);
             requestNpb450Register(NPB_CMD_READ_IOUT);
             _nextPollActionMs = now + NPB_POLL_INTERVAL_MS;
         }
@@ -795,7 +820,7 @@ bool MeanwellCanClass::setNpb450EepromLock()
 
 bool MeanwellCanClass::applyNpb450Setpoints()
 {
-    if (!_npbControlEnabled || _npbTargetWatts <= 0.0f) {
+    if (!_npbControlEnabled || !_npbChargeEnabled) {
         return sendNpb450Command(NPB_CMD_OPERATION, NPB_DATA_OPERATION_OFF);
     }
 
@@ -817,6 +842,27 @@ float MeanwellCanClass::getTargetCurrentFromPower() const
         return 0.0f;
     }
     return std::clamp(_npbTargetWatts / _npbChargeVoltage, 0.0f, _npbMaxCurrent);
+}
+
+void MeanwellCanClass::updateNpbOutputEnergy()
+{
+    if (!_npbMeasuredVoltageSeen || !_npbMeasuredCurrentSeen) {
+        return;
+    }
+
+    const uint32_t now = millis();
+    if (_lastEnergyUpdateMs != 0) {
+        const uint32_t elapsedMs = now - _lastEnergyUpdateMs;
+        _npbOutputEnergyKWh += (_npbMeasuredVoltage * _npbMeasuredCurrent * elapsedMs) / 3600000000.0f;
+    }
+    _lastEnergyUpdateMs = now;
+
+    if (_lastEnergyPersistMs == 0 || now - _lastEnergyPersistMs >= NPB_ENERGY_PERSIST_INTERVAL_MS) {
+        auto guard = Configuration.getWriteGuard();
+        guard.getConfig().Meanwell.Npb450OutputEnergyKWh = _npbOutputEnergyKWh;
+        Configuration.write();
+        _lastEnergyPersistMs = now;
+    }
 }
 
 void MeanwellCanClass::handleFrame(const CanFrame& frame)
@@ -946,6 +992,16 @@ void MeanwellCanClass::handleNpb450Frame(const CanFrame& frame)
         _npbMeasuredCurrentSeen = true;
         _lastStatusUpdateMs = millis();
         publishMetric("meanwell/npb450/status/iout_actual", _npbMeasuredCurrent, 2);
+        publishMetric("meanwell/npb450/status/output_power", _npbMeasuredVoltage * _npbMeasuredCurrent, 2);
+        updateNpbOutputEnergy();
+        break;
+    case NPB_CMD_READ_VOUT:
+        _npbMeasuredVoltage = static_cast<float>(value) / 100.0f;
+        _npbMeasuredVoltageSeen = true;
+        _lastStatusUpdateMs = millis();
+        publishMetric("meanwell/npb450/status/vout_actual", _npbMeasuredVoltage, 2);
+        publishMetric("meanwell/npb450/status/output_power", _npbMeasuredVoltage * _npbMeasuredCurrent, 2);
+        updateNpbOutputEnergy();
         break;
     default:
         break;
@@ -1037,10 +1093,16 @@ void MeanwellCanClass::publishNpb450State()
 
     MqttSettings.publish("meanwell/npb450/status/init_state", initState);
     MqttSettings.publish("meanwell/npb450/status/control_enabled", _npbControlEnabled ? "1" : "0");
+    MqttSettings.publish("meanwell/npb450/status/charge_enabled", _npbChargeEnabled ? "1" : "0");
     publishMetric("meanwell/npb450/status/target_w", _npbTargetWatts, 1);
     publishMetric("meanwell/npb450/status/target_iout", getTargetCurrentFromPower(), 2);
     publishMetric("meanwell/npb450/status/target_vout", _npbChargeVoltage, 2);
     publishMetric("meanwell/npb450/status/max_current", _npbMaxCurrent, 2);
+    publishMetric("meanwell/npb450/status/vout_actual", _npbMeasuredVoltage, 2);
+    publishMetric("meanwell/npb450/status/iout_actual", _npbMeasuredCurrent, 2);
+    publishMetric("meanwell/npb450/status/output_power", _npbMeasuredVoltage * _npbMeasuredCurrent, 2);
+    publishMetric("meanwell/npb450/status/output_energy", _npbOutputEnergyKWh, 5);
+    publishMetric("meanwell/npb450/status/output_efficiency", _npbTargetWatts > 0.0f ? (_npbMeasuredVoltage * _npbMeasuredCurrent / _npbTargetWatts) * 100.0f : 0.0f, 1);
     MqttSettings.publish("meanwell/npb450/status/psu_mode_ok", _npbPsuModeOk ? "1" : "0");
     MqttSettings.publish("meanwell/npb450/status/eeprom_lock_ok", _npbEepromLockOk ? "1" : "0");
     MqttSettings.publish("meanwell/npb450/status/address", String(_npbAddress));

@@ -39,6 +39,16 @@
                                             : $t('home.ControlDisabled')
                                     }}
                                 </span>
+                                <span
+                                    class="badge"
+                                    :class="liveData.charger.npb450.charge_enabled ? 'text-bg-success' : 'text-bg-secondary'"
+                                >
+                                    {{
+                                        liveData.charger.npb450.charge_enabled
+                                            ? $t('home.ChargeEnabled')
+                                            : $t('home.ChargeDisabled')
+                                    }}
+                                </span>
                             </template>
                             <DataAgeDisplay v-if="liveData.charger.data_age_ms >= 0" :data-age-ms="liveData.charger.data_age_ms" />
                             <span class="badge text-bg-warning" v-else>{{ $t('home.WaitingForChargerData') }}</span>
@@ -161,52 +171,36 @@
                                 </table>
                             </div>
                             <div class="col-lg-4">
-                                <h6 class="text-uppercase text-muted mb-2">{{ $t('home.ChargerMetrics') }}</h6>
+                                <h6 class="text-uppercase text-muted mb-2">{{ $t('home.Npb450Output') }}</h6>
                                 <table class="table table-sm table-striped mb-0">
                                     <tbody>
                                         <tr>
                                             <td>{{ $t('home.OutputVoltage') }}</td>
-                                            <td>{{ $n(liveData.charger.charger.output_voltage_v ?? 0, 'decimalOneDigit') }} V</td>
+                                            <td>{{ $n(liveData.charger.npb450.vout_actual_v ?? 0, 'decimalTwoDigits') }} V</td>
                                         </tr>
                                         <tr>
                                             <td>{{ $t('home.OutputCurrent') }}</td>
-                                            <td>{{ $n(liveData.charger.charger.output_current_a ?? 0, 'decimalOneDigit') }} A</td>
+                                            <td>{{ $n(liveData.charger.npb450.iout_actual_a ?? 0, 'decimalTwoDigits') }} A</td>
                                         </tr>
                                         <tr>
                                             <td>{{ $t('home.OutputPower') }}</td>
-                                            <td>{{ $n(liveData.charger.charger.output_power_w ?? 0, 'decimalOneDigit') }} W</td>
+                                            <td>{{ $n(liveData.charger.npb450.output_power_w ?? 0, 'decimalOneDigit') }} W</td>
                                         </tr>
                                         <tr>
-                                            <td>{{ $t('home.ChargerTemperature') }}</td>
-                                            <td>{{ $n(liveData.charger.charger.temperature_c ?? 0, 'decimalOneDigit') }} °C</td>
+                                            <td>{{ $t('home.OutputEnergy') }}</td>
+                                            <td>{{ liveData.charger.npb450.output_energy_kwh?.toFixed(3) ?? '-' }} kWh</td>
                                         </tr>
                                         <tr>
-                                            <td>{{ $t('home.StateWord') }}</td>
-                                            <td>{{ formatWord(liveData.charger.charger.state_word) }}</td>
-                                        </tr>
-                                        <tr>
-                                            <td>{{ $t('home.AlarmWord') }}</td>
-                                            <td>{{ formatWord(liveData.charger.charger.alarm_word) }}</td>
+                                            <td>{{ $t('home.OutputEfficiency') }}</td>
+                                            <td>{{ liveData.charger.npb450.efficiency_percent?.toFixed(1) ?? '-' }} %</td>
                                         </tr>
                                     </tbody>
                                 </table>
                             </div>
                             <div class="col-lg-4">
-                                <h6 class="text-uppercase text-muted mb-2">{{ $t('home.BatteryMetrics') }}</h6>
+                                <h6 class="text-uppercase text-muted mb-2">{{ $t('home.CanInterface') }}</h6>
                                 <table class="table table-sm table-striped mb-0">
                                     <tbody>
-                                        <tr>
-                                            <td>{{ $t('home.BatteryVoltage') }}</td>
-                                            <td>{{ $n(liveData.charger.battery.voltage_v ?? 0, 'decimalOneDigit') }} V</td>
-                                        </tr>
-                                        <tr>
-                                            <td>{{ $t('home.BatteryCurrent') }}</td>
-                                            <td>{{ $n(liveData.charger.battery.current_a ?? 0, 'decimalOneDigit') }} A</td>
-                                        </tr>
-                                        <tr>
-                                            <td>{{ $t('home.BatteryPower') }}</td>
-                                            <td>{{ $n(liveData.charger.battery.power_w ?? 0, 'decimalOneDigit') }} W</td>
-                                        </tr>
                                         <tr>
                                             <td>{{ $t('home.PinSck') }}</td>
                                             <td>{{ liveData.charger.mcp2515?.pinout?.sck ?? '-' }}</td>

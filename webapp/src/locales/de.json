@@ -172,7 +172,11 @@
         "WaitingForChargerData": "Warte auf Ladegerät-Daten",
         "ControlEnabled": "Steuerung aktiv",
         "ControlDisabled": "Steuerung inaktiv",
+        "ChargeEnabled": "Laden aktiv",
+        "ChargeDisabled": "Laden inaktiv",
         "Npb450Control": "NPB450 Steuerung",
+        "Npb450Output": "NPB450 Ausgang",
+        "CanInterface": "CAN-Schnittstelle",
         "Address": "Adresse",
         "TargetPower": "Soll-Leistung",
         "TargetVoltage": "Soll-Spannung",
@@ -186,6 +190,8 @@
         "OutputVoltage": "Ausgangsspannung",
         "OutputCurrent": "Ausgangsstrom",
         "OutputPower": "Ausgangsleistung",
+        "OutputEnergy": "Ausgangsenergie",
+        "OutputEfficiency": "Ausgangswirkungsgrad",
         "ChargerTemperature": "Ladegerät-Temperatur",
         "StateWord": "Statuswort",
         "AlarmWord": "Alarmwort",
@@ -754,7 +760,10 @@
         "LedBrightness": "LED {led} Helligkeit ({brightness})",
         "Meanwell": "Mean Well",
         "Npb450CanAddress": "NPB-450 CAN-Adresse",
-        "Npb450CanAddressHint": "Die Kommunikationsadresse des NPB-450 als Hexadezimalwert von 0x00 bis 0x03 eingeben. Der Standardwert ist 0x03."
+        "Npb450CanAddressHint": "Die Kommunikationsadresse des NPB-450 als Hexadezimalwert von 0x00 bis 0x03 eingeben. Der Standardwert ist 0x03.",
+        "Npb450TargetPowerMin": "NPB-450 minimale Zielleistung",
+        "Npb450TargetPowerMax": "NPB-450 maximale Zielleistung",
+        "Npb450TargetPowerHint": "Den zulassigen NPB-450-Zielleistungsbereich festlegen. Das Gerat unterstutzt 75 W bis 360 W."
     },
     "pininfo": {
         "Category": "Kategorie",

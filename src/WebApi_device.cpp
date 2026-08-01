@@ -5,6 +5,7 @@
 #include "WebApi_device.h"
 #include "Configuration.h"
 #include "Display_Graphic.h"
+#include "MqttHandleHass.h"
 #include "PinMapping.h"
 #include "RestartHelper.h"
 #include "WebApi.h"
@@ -125,6 +126,8 @@ void WebApiDeviceClass::onDeviceAdminGet(AsyncWebServerRequest* request)
 
     auto meanwell = root["meanwell"].to<JsonObject>();
     meanwell["npb450_can_address"] = formatNpb450CanAddress(config.Meanwell.Npb450CanAddress);
+    meanwell["npb450_target_power_min"] = config.Meanwell.Npb450TargetPowerMin;
+    meanwell["npb450_target_power_max"] = config.Meanwell.Npb450TargetPowerMax;
 
     auto leds = root["led"].to<JsonArray>();
     for (uint8_t i = 0; i < PINMAPPING_LED_COUNT; i++) {
@@ -174,6 +177,15 @@ void WebApiDeviceClass::onDeviceAdminPost(AsyncWebServerRequest* request)
         return;
     }
 
+    const uint16_t npb450TargetPowerMin = root["meanwell"]["npb450_target_power_min"] | 0;
+    const uint16_t npb450TargetPowerMax = root["meanwell"]["npb450_target_power_max"] | 0;
+    if (npb450TargetPowerMin < 75 || npb450TargetPowerMax > 360 || npb450TargetPowerMin > npb450TargetPowerMax) {
+        retMsg["message"] = "NPB-450 target power limits must be within 75 W to 360 W!";
+        retMsg["code"] = WebApiError::GenericValueMissing;
+        WebApi.sendJsonResponse(request, response, __FUNCTION__, __LINE__);
+        return;
+    }
+
     bool performRestart = false;
 
     {
@@ -191,6 +203,8 @@ void WebApiDeviceClass::onDeviceAdminPost(AsyncWebServerRequest* request)
         config.Display.Diagram.Duration = root["display"]["diagramduration"].as<uint32_t>();
         config.Display.Diagram.Mode = root["display"]["diagrammode"].as<DiagramMode_t>();
         config.Meanwell.Npb450CanAddress = npb450CanAddress;
+        config.Meanwell.Npb450TargetPowerMin = npb450TargetPowerMin;
+        config.Meanwell.Npb450TargetPowerMax = npb450TargetPowerMax;
 
         for (uint8_t i = 0; i < PINMAPPING_LED_COUNT; i++) {
             config.Led_Single[i].Brightness = root["led"][i]["brightness"].as<uint8_t>();
@@ -209,6 +223,7 @@ void WebApiDeviceClass::onDeviceAdminPost(AsyncWebServerRequest* request)
     Display.Diagram().updatePeriod();
 
     WebApi.writeConfig(retMsg);
+    MqttHandleHass.forceUpdate();
 
     WebApi.sendJsonResponse(request, response, __FUNCTION__, __LINE__);
 

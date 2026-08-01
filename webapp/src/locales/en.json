@@ -172,7 +172,11 @@
         "WaitingForChargerData": "Waiting for charger data",
         "ControlEnabled": "Control enabled",
         "ControlDisabled": "Control disabled",
+        "ChargeEnabled": "Charge enabled",
+        "ChargeDisabled": "Charge disabled",
         "Npb450Control": "NPB450 Control",
+        "Npb450Output": "NPB450 Output",
+        "CanInterface": "CAN Interface",
         "Address": "Address",
         "TargetPower": "Target Power",
         "TargetVoltage": "Target Voltage",
@@ -186,6 +190,8 @@
         "OutputVoltage": "Output Voltage",
         "OutputCurrent": "Output Current",
         "OutputPower": "Output Power",
+        "OutputEnergy": "Output Energy",
+        "OutputEfficiency": "Output Efficiency",
         "ChargerTemperature": "Charger Temperature",
         "StateWord": "State word",
         "AlarmWord": "Alarm word",
@@ -754,7 +760,10 @@
         "LedBrightness": "LED {led} brightness ({brightness})",
         "Meanwell": "Mean Well",
         "Npb450CanAddress": "NPB-450 CAN address",
-        "Npb450CanAddressHint": "Enter the NPB-450 communication address as hexadecimal, from 0x00 to 0x03. The default is 0x03."
+        "Npb450CanAddressHint": "Enter the NPB-450 communication address as hexadecimal, from 0x00 to 0x03. The default is 0x03.",
+        "Npb450TargetPowerMin": "NPB-450 minimum target power",
+        "Npb450TargetPowerMax": "NPB-450 maximum target power",
+        "Npb450TargetPowerHint": "Set the allowed NPB-450 target-power range. The device supports 75 W to 360 W."
     },
     "pininfo": {
         "Category": "Category",

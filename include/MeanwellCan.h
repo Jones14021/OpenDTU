@@ -66,6 +66,7 @@ private:
     bool setNpb450EepromLock();
     bool applyNpb450Setpoints();
     float getTargetCurrentFromPower() const;
+    void updateNpbOutputEnergy();
 
     static bool parseBoolPayload(const String& payload, bool& out);
     static bool parseFloatPayload(const String& payload, float& out);
@@ -105,13 +106,18 @@ private:
     uint32_t _nextNpbTxMs = 0;
     uint32_t _npbInitStartMs = 0;
     uint32_t _lastRxFrameMs = 0;
+    uint32_t _lastEnergyUpdateMs = 0;
+    uint32_t _lastEnergyPersistMs = 0;
 
     uint8_t _npbAddress = 0;
     bool _npbControlEnabled = false;
+    bool _npbChargeEnabled = false;
     float _npbTargetWatts = 0.0f;
     float _npbChargeVoltage = 14.4f;
     float _npbMaxCurrent = 30.0f;
+    float _npbMeasuredVoltage = 0.0f;
     float _npbMeasuredCurrent = 0.0f;
+    float _npbOutputEnergyKWh = 0.0f;
     bool _npbPsuModeOk = false;
     bool _npbEepromLockOk = false;
     bool _npbValidationSeen = false;
@@ -120,6 +126,7 @@ private:
     bool _npbSystemStatusSeen = false;
     bool _npbSystemConfigSeen = false;
     bool _npbCurveConfigSeen = false;
+    bool _npbMeasuredVoltageSeen = false;
     bool _npbMeasuredCurrentSeen = false;
     uint16_t _npbSystemStatus = 0;
     uint16_t _npbSystemConfig = 0;

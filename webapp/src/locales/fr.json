@@ -172,7 +172,11 @@
         "WaitingForChargerData": "En attente des données du chargeur",
         "ControlEnabled": "Contrôle activé",
         "ControlDisabled": "Contrôle désactivé",
+        "ChargeEnabled": "Charge activée",
+        "ChargeDisabled": "Charge désactivée",
         "Npb450Control": "Contrôle NPB450",
+        "Npb450Output": "Sortie NPB450",
+        "CanInterface": "Interface CAN",
         "Address": "Adresse",
         "TargetPower": "Puissance cible",
         "TargetVoltage": "Tension cible",
@@ -186,6 +190,8 @@
         "OutputVoltage": "Tension de sortie",
         "OutputCurrent": "Courant de sortie",
         "OutputPower": "Puissance de sortie",
+        "OutputEnergy": "Energie de sortie",
+        "OutputEfficiency": "Rendement de sortie",
         "ChargerTemperature": "Température du chargeur",
         "StateWord": "Mot d'état",
         "AlarmWord": "Mot d'alarme",
@@ -741,7 +747,10 @@
         "LedBrightness": "LED {led} luminosité ({brightness})",
         "Meanwell": "Mean Well",
         "Npb450CanAddress": "Adresse CAN NPB-450",
-        "Npb450CanAddressHint": "Saisissez l'adresse de communication NPB-450 en hexadecimal, de 0x00 a 0x03. La valeur par defaut est 0x03."
+        "Npb450CanAddressHint": "Saisissez l'adresse de communication NPB-450 en hexadecimal, de 0x00 a 0x03. La valeur par defaut est 0x03.",
+        "Npb450TargetPowerMin": "Puissance cible minimale NPB-450",
+        "Npb450TargetPowerMax": "Puissance cible maximale NPB-450",
+        "Npb450TargetPowerHint": "Definissez la plage de puissance cible NPB-450 autorisee. L'appareil prend en charge 75 W a 360 W."
     },
     "pininfo": {
         "Category": "Catégorie",

@@ -476,17 +476,29 @@ void MqttHandleHassClass::publishMeanwellNpb450Config()
         "mdi:toggle-switch",
         CATEGORY_CONFIG);
 
+    publishMeanwellNpb450Switch(
+        "Charge Enable",
+        "meanwell/npb450/status/charge_enabled",
+        "meanwell/npb450/control/charge_enable",
+        "ON",
+        "OFF",
+        "1",
+        "0",
+        "mdi:battery-charging",
+        CATEGORY_CONFIG);
+
     publishMeanwellNpb450Number(
         "Target Watt",
         "meanwell/npb450/status/target_w",
         "meanwell/npb450/control/target_w",
-        0.0f,
-        450.0f,
+        static_cast<float>(Configuration.get().Meanwell.Npb450TargetPowerMin),
+        static_cast<float>(Configuration.get().Meanwell.Npb450TargetPowerMax),
         1.0f,
         "W",
         "mdi:flash",
         STATE_CLS_NONE,
-        CATEGORY_CONFIG);
+        CATEGORY_CONFIG,
+        true);
 
     publishMeanwellNpb450Number(
         "Charge Voltage",
@@ -595,13 +607,49 @@ void MqttHandleHassClass::publishMeanwellNpb450Config()
         CATEGORY_DIAGNOSTIC);
 
     publishMeanwellNpb450Sensor(
-        "Measured Current",
+        "Output Voltage",
+        "meanwell/npb450/status/vout_actual",
+        "V",
+        "",
+        DEVICE_CLS_VOLTAGE,
+        STATE_CLS_MEASUREMENT,
+        CATEGORY_NONE);
+
+    publishMeanwellNpb450Sensor(
+        "Output Current",
         "meanwell/npb450/status/iout_actual",
         "A",
         "mdi:current-dc",
         DEVICE_CLS_CURRENT,
         STATE_CLS_MEASUREMENT,
-        CATEGORY_DIAGNOSTIC);
+        CATEGORY_NONE);
+
+    publishMeanwellNpb450Sensor(
+        "Output Power",
+        "meanwell/npb450/status/output_power",
+        "W",
+        "",
+        DEVICE_CLS_PWR,
+        STATE_CLS_MEASUREMENT,
+        CATEGORY_NONE);
+
+    publishMeanwellNpb450Sensor(
+        "Output Energy",
+        "meanwell/npb450/status/output_energy",
+        "kWh",
+        "mdi:lightning-bolt",
+        DEVICE_CLS_ENERGY,
+        STATE_CLS_TOTAL_INCREASING,
+        CATEGORY_NONE);
+
+    publishMeanwellNpb450Sensor(
+        "Output Efficiency",
+        "meanwell/npb450/status/output_efficiency",
+        "%",
+        "mdi:percent",
+        DEVICE_CLS_NONE,
+        STATE_CLS_MEASUREMENT,
+        CATEGORY_NONE);
 
     publishMeanwellNpb450Sensor(
         "System Status",
@@ -621,86 +669,6 @@ void MqttHandleHassClass::publishMeanwellNpb450Config()
         STATE_CLS_NONE,
         CATEGORY_DIAGNOSTIC);
 
-    publishMeanwellNpb450Sensor(
-        "Output Voltage",
-        "meanwell/charger/output_voltage",
-        "V",
-        "",
-        DEVICE_CLS_VOLTAGE,
-        STATE_CLS_MEASUREMENT,
-        CATEGORY_NONE);
-
-    publishMeanwellNpb450Sensor(
-        "Output Current",
-        "meanwell/charger/output_current",
-        "A",
-        "",
-        DEVICE_CLS_CURRENT,
-        STATE_CLS_MEASUREMENT,
-        CATEGORY_NONE);
-
-    publishMeanwellNpb450Sensor(
-        "Output Power",
-        "meanwell/charger/output_power",
-        "W",
-        "",
-        DEVICE_CLS_PWR,
-        STATE_CLS_MEASUREMENT,
-        CATEGORY_NONE);
-
-    publishMeanwellNpb450Sensor(
-        "Temperature",
-        "meanwell/charger/temperature",
-        "°C",
-        "",
-        DEVICE_CLS_TEMPERATURE,
-        STATE_CLS_MEASUREMENT,
-        CATEGORY_NONE);
-
-    publishMeanwellNpb450Sensor(
-        "State Word",
-        "meanwell/charger/state_word",
-        "",
-        "mdi:counter",
-        DEVICE_CLS_NONE,
-        STATE_CLS_NONE,
-        CATEGORY_DIAGNOSTIC);
-
-    publishMeanwellNpb450Sensor(
-        "Alarm Word",
-        "meanwell/charger/alarm_word",
-        "",
-        "mdi:alert-outline",
-        DEVICE_CLS_NONE,
-        STATE_CLS_NONE,
-        CATEGORY_DIAGNOSTIC);
-
-    publishMeanwellNpb450Sensor(
-        "Battery Voltage",
-        "meanwell/battery/voltage",
-        "V",
-        "",
-        DEVICE_CLS_VOLTAGE,
-        STATE_CLS_MEASUREMENT,
-        CATEGORY_NONE);
-
-    publishMeanwellNpb450Sensor(
-        "Battery Current",
-        "meanwell/battery/current",
-        "A",
-        "",
-        DEVICE_CLS_CURRENT,
-        STATE_CLS_MEASUREMENT,
-        CATEGORY_NONE);
-
-    publishMeanwellNpb450Sensor(
-        "Battery Power",
-        "meanwell/battery/power",
-        "W",
-        "",
-        DEVICE_CLS_PWR,
-        STATE_CLS_MEASUREMENT,
-        CATEGORY_NONE);
 }
 
 void MqttHandleHassClass::clearMeanwellNpb450Config()
@@ -710,6 +678,7 @@ void MqttHandleHassClass::clearMeanwellNpb450Config()
     const String root = getMeanwellNpb450RootDevice();
 
     publish("switch/" + root + "/control_enable/config", "");
+    publish("switch/" + root + "/charge_enable/config", "");
 
     publish("number/" + root + "/target_watt/config", "");
     publish("number/" + root + "/charge_voltage/config", "");
@@ -733,6 +702,8 @@ void MqttHandleHassClass::clearMeanwellNpb450Config()
     publish("sensor/" + root + "/output_voltage/config", "");
     publish("sensor/" + root + "/output_current/config", "");
     publish("sensor/" + root + "/output_power/config", "");
+    publish("sensor/" + root + "/output_energy/config", "");
+    publish("sensor/" + root + "/output_efficiency/config", "");
     publish("sensor/" + root + "/temperature/config", "");
     publish("sensor/" + root + "/state_word/config", "");
     publish("sensor/" + root + "/alarm_word/config", "");
@@ -797,7 +768,7 @@ void MqttHandleHassClass::publishMeanwellNpb450Number(
     const String& name, const String& state_topic, const String& command_topic,
     const float min, const float max, const float step,
     const String& unit_of_measure, const String& icon,
-    const StateClassType state_class, const CategoryType category)
+    const StateClassType state_class, const CategoryType category, const bool slider)
 {
     String numberId = name;
     numberId.toLowerCase();
@@ -815,6 +786,9 @@ void MqttHandleHassClass::publishMeanwellNpb450Number(
     root["min"] = min;
     root["max"] = max;
     root["step"] = step;
+    if (slider) {
+        root["mode"] = "slider";
+    }
 
     addCommonMetadata(root, unit_of_measure, icon, DEVICE_CLS_NONE, state_class, category);
 

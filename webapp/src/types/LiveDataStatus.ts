@@ -65,11 +65,17 @@ export interface Hints {
 export interface ChargerNpb450Status {
     init_state?: string;
     control_enabled?: boolean;
+    charge_enabled?: boolean;
     target_w?: number;
     target_iout_a?: number;
     target_vout_v?: number;
+    vout_actual_v?: number;
+    vout_actual_seen?: boolean;
     iout_actual_a?: number;
     iout_actual_seen?: boolean;
+    output_power_w?: number;
+    output_energy_kwh?: number;
+    efficiency_percent?: number;
     psu_mode_ok?: boolean;
     eeprom_lock_ok?: boolean;
     address?: number;

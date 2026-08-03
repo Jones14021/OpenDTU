@@ -10,7 +10,8 @@ Use this skill for any action involving the configured target at `10.0.1.65`. Ha
 
 ## Environment Constraint
 
-- The devcontainer installs `curl` for authenticated Web API requests and `websocat` for direct console WebSocket access. No relay or proxy process is required.
+- The devcontainer installs `curl` for authenticated Web API requests and `websocat` for direct console WebSocket access. `websocat` is installed from upstream release binaries because Debian bullseye does not provide an apt package. No relay or proxy process is required.
+- Verify websocket tooling in a rebuilt container with `websocat --version`.
 - After rebuilding the devcontainer, connect to the console with:
 
    ```sh

@@ -18,6 +18,13 @@
 - Inspect firmware logs through `ws://admin:openDTU42@10.0.1.65/console`. The firmware's console endpoint is `/console`; when read-only access is disabled it uses Digest authentication.
 - OTA firmware updates are performed through the web UI at `http://10.0.1.65/firmware/upgrade` or its backing `POST /api/firmware/update` endpoint. See the `opendtu-hardware-workflow` skill for the required multipart request and post-update checks.
 
+## WebSocket Tooling
+
+- The devcontainer installs `websocat` from upstream release binaries (not apt, because Debian bullseye has no `websocat` package).
+- Verify tooling after container rebuild with `websocat --version`.
+- Connect to the OpenDTU console WebSocket with `websocat ws://admin:openDTU42@10.0.1.65/console` after the `/api/system/status` preflight succeeds.
+- For one-shot collection during diagnostics, prefer bounded reads such as `websocat -n1 ws://admin:openDTU42@10.0.1.65/console` to avoid leaving long-running sessions open.
+
 ## Installed Hardware
 
 - The target communicates with a Hoymiles HMS-400-1T through the CMT2000 RF module. The firmware source and device profiles refer to this radio path as `CMT2300A`; preserve the CMT configuration when changing inverter or pin-mapping behavior.

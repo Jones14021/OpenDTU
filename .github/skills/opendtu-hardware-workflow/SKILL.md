@@ -19,6 +19,7 @@ Use this skill for any action involving the configured target at `10.0.1.65`. Ha
    ```
 
    Use this only after the target preflight succeeds. The target's console applies Digest authentication when read-only access is disabled; the supplied URL is the known development connection.
+- `websocat -n1` captures one WebSocket frame, so it can miss an asynchronous event. For a bounded diagnostic window, use `timeout 20 websocat ws://admin:openDTU42@10.0.1.65/console`; do not use unsupported forms such as `-n50`.
 
 ## Target Hardware
 
@@ -42,11 +43,11 @@ Use this skill for any action involving the configured target at `10.0.1.65`. Ha
 1. Before every target-specific action, make a single authenticated health request:
 
    ```sh
-   curl --digest -u admin:openDTU42 --fail --silent --show-error \
+   curl --basic -u admin:openDTU42 --fail --silent --show-error \
      http://10.0.1.65/api/system/status
    ```
 
-   `GET /api/system/status` reports the active `pioenv`, firmware Git metadata, uptime, reset reasons, memory, filesystem, and radio state. Stop if it fails or identifies an unexpected target.
+   `GET /api/system/status` reports the active `pioenv`, firmware Git metadata, uptime, reset reasons, memory, filesystem, and radio state. Read-only access may allow this request without authentication, but explicit Basic auth validates the credentials required for state-changing API routes. Stop if it fails or identifies an unexpected target.
 2. Use only the necessary follow-up endpoint for the task. Avoid polling and repeated target writes.
 3. After a state-changing action, verify once with `/api/system/status` or `/api/livedata/status`, then inspect console logs if needed.
 
@@ -69,10 +70,12 @@ The browser route `http://10.0.1.65/firmware/upgrade` uploads to `POST /api/firm
    ```sh
    firmware=.pio/build/generic_esp32/firmware.bin
    md5=$(md5sum "$firmware" | awk '{print $1}')
-   curl --digest -u admin:openDTU42 --fail --show-error \
+   curl --basic -u admin:openDTU42 --fail --show-error \
      -F "MD5=$md5" -F "firmware=@$firmware;filename=firmware" \
      http://10.0.1.65/api/firmware/update
    ```
+
+   The firmware update route uses HTTP Basic authentication. Do not use `--digest`: it can succeed against read-only endpoints yet receive `401` from this multipart upload route.
 
 3. A successful upload returns `OK` with HTTP 200 and immediately schedules a restart. Do not make additional requests while it reboots.
 4. Once available again, make one `/api/system/status` request and confirm `pioenv` is `generic_esp32`; inspect `/console` only if the status or expected behavior is wrong.

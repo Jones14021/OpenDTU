@@ -13,17 +13,17 @@
 
 ## Hardware Target: 10.0.1.65
 
-- Treat runs against the target as scarce: first verify it is reachable with the authenticated `GET http://10.0.1.65/api/system/status`. Do not upload, restart, change configuration, or transmit test commands if that check fails.
+- Treat runs against the target as scarce: first verify it is reachable with `curl --basic -u admin:openDTU42 --fail --silent --show-error http://10.0.1.65/api/system/status`. Do not upload, restart, change configuration, or transmit test commands if that check fails. Read-only access may be enabled, but explicit Basic authentication verifies the credentials required by state-changing API routes.
 - Use the target only when local build and task-specific checks already pass. Prefer one deliberate verification run over repeated probing.
 - Inspect firmware logs through `ws://admin:openDTU42@10.0.1.65/console`. The firmware's console endpoint is `/console`; when read-only access is disabled it uses Digest authentication.
-- OTA firmware updates are performed through the web UI at `http://10.0.1.65/firmware/upgrade` or its backing `POST /api/firmware/update` endpoint. See the `opendtu-hardware-workflow` skill for the required multipart request and post-update checks.
+- OTA firmware updates are performed through the web UI at `http://10.0.1.65/firmware/upgrade` or its backing `POST /api/firmware/update`. The HTTP API route uses Basic authentication; see the `opendtu-hardware-workflow` skill for the required multipart request and post-update checks.
 
 ## WebSocket Tooling
 
 - The devcontainer installs `websocat` from upstream release binaries (not apt, because Debian bullseye has no `websocat` package).
 - Verify tooling after container rebuild with `websocat --version`.
 - Connect to the OpenDTU console WebSocket with `websocat ws://admin:openDTU42@10.0.1.65/console` after the `/api/system/status` preflight succeeds.
-- For one-shot collection during diagnostics, prefer bounded reads such as `websocat -n1 ws://admin:openDTU42@10.0.1.65/console` to avoid leaving long-running sessions open.
+- `websocat -n1` captures only one WebSocket frame and can miss an asynchronous diagnostic. For a finite log window, use `timeout 20 websocat ws://admin:openDTU42@10.0.1.65/console`; do not use unsupported forms such as `-n50`.
 
 ## Installed Hardware
 

@@ -79,6 +79,7 @@ void HoymilesRadio::handleReceivedPackage()
 
                 _commandQueue.pop();
                 _busyFlag = false;
+                onRxNoAnswer();
 
             } else if (verifyResult == FRAGMENT_RETRANSMIT_TIMEOUT) {
                 ESP_LOGD(TAG, "Retransmit timeout");

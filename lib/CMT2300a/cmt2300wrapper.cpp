@@ -41,15 +41,38 @@ bool CMT2300A::startListening(void)
 
     if (!CMT2300A_GoRx()) {
         return false;
-    } else {
-        return true;
     }
+
+    const uint32_t timer = millis();
+    do {
+        if (CMT2300A_GetChipStatus() == CMT2300A_STA_RX) {
+            return true;
+        }
+        CMT2300A_DelayMs(1);
+    } while (millis() - timer < 10);
+
+    const auto diag = getRxDiag();
+    ESP_LOGE(TAG,
+        "RX start failed ch=%u mode=0x%02x int=0x%02x intclr1=0x%02x fifo=0x%02x fifoctl=0x%02x rssi=%" PRId8,
+        static_cast<unsigned>(diag.channel),
+        static_cast<unsigned>(diag.modeSta),
+        static_cast<unsigned>(diag.intFlag),
+        static_cast<unsigned>(diag.intClr1),
+        static_cast<unsigned>(diag.fifoFlag),
+        static_cast<unsigned>(diag.fifoCtl),
+        diag.rssiDbm);
+    return false;
 }
 
 bool CMT2300A::stopListening(void)
 {
     CMT2300A_ClearInterruptFlags();
     return CMT2300A_GoSleep();
+}
+
+bool CMT2300A::isReceiving() const
+{
+    return CMT2300A_GetChipStatus() == CMT2300A_STA_RX;
 }
 
 bool CMT2300A::available(void)
@@ -166,6 +189,21 @@ bool CMT2300A::write(const uint8_t* buf, const uint8_t len)
 const CMT2300A::TxDiag& CMT2300A::getLastTxDiag() const
 {
     return _lastTxDiag;
+}
+
+CMT2300A::RxDiag CMT2300A::getRxDiag() const
+{
+    RxDiag diag;
+    diag.timestampMs = millis();
+    diag.channel = CMT2300A_ReadReg(CMT2300A_CUS_FREQ_CHNL);
+    diag.modeSta = CMT2300A_ReadReg(CMT2300A_CUS_MODE_STA);
+    diag.intFlag = CMT2300A_ReadReg(CMT2300A_CUS_INT_FLAG);
+    diag.intClr1 = CMT2300A_ReadReg(CMT2300A_CUS_INT_CLR1);
+    diag.fifoFlag = CMT2300A_ReadReg(CMT2300A_CUS_FIFO_FLAG);
+    diag.fifoCtl = CMT2300A_ReadReg(CMT2300A_CUS_FIFO_CTL);
+    diag.rssiCode = CMT2300A_ReadReg(CMT2300A_CUS_RSSI_CODE);
+    diag.rssiDbm = static_cast<int8_t>(CMT2300A_ReadReg(CMT2300A_CUS_RSSI_DBM) - 128);
+    return diag;
 }
 
 void CMT2300A::setChannel(const uint8_t channel)

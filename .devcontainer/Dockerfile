@@ -8,6 +8,7 @@ RUN rm -f /etc/apt/sources.list.d/yarn.list
 RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
     && apt-get -y install --no-install-recommends \
         build-essential \
+        bubblewrap \
         curl \
         git \
         libusb-1.0-0 \
@@ -17,6 +18,8 @@ RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
         minicom \
         picocom \
         screen \
+        socat \
+        websocat \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 

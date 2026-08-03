@@ -29,7 +29,9 @@
             "extensions": [
                 "platformio.platformio-ide",
                 "ms-vscode.cpptools",
-                "ms-vscode.cpptools-extension-pack"
+                "ms-vscode.cpptools-extension-pack",
+                "mhutchie.git-graph",
+                "ms-azuretools.vscode-docker"
             ]
         }
     },

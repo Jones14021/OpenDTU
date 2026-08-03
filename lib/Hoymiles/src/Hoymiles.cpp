@@ -67,7 +67,7 @@ void HoymilesClass::loop()
         }
 
         if (iv->getEnablePolling() || iv->getEnableCommands()) {
-            ESP_LOGI(TAG, "Fetch inverter: %s", iv->serialString().c_str());
+            ESP_LOGD(TAG, "Fetch inverter: %s", iv->serialString().c_str());
 
             if (!iv->isReachable()) {
                 iv->sendChangeChannelRequest();
@@ -84,7 +84,7 @@ void HoymilesClass::loop()
                 // Fetch limit
                 if (((millis() - iv->SystemConfigPara()->getLastUpdateRequest() > HOY_SYSTEM_CONFIG_PARA_POLL_INTERVAL)
                         && (millis() - iv->SystemConfigPara()->getLastUpdateCommand() > HOY_SYSTEM_CONFIG_PARA_POLL_MIN_DURATION))) {
-                    ESP_LOGI(TAG, "Request SystemConfigPara");
+                    ESP_LOGD(TAG, "Request SystemConfigPara");
                     iv->sendSystemConfigParaRequest();
                 }
 
@@ -100,13 +100,13 @@ void HoymilesClass::loop()
                         && iv->DevInfo()->getLastUpdateSimple() > 0;
 
                     if (invalidDevInfo) {
-                        ESP_LOGW(TAG, "DevInfo: No Valid Data");
+                        ESP_LOGD(TAG, "DevInfo: No Valid Data");
                     }
 
                     if ((iv->DevInfo()->getLastUpdateAll() == 0)
                         || (iv->DevInfo()->getLastUpdateSimple() == 0)
                         || invalidDevInfo) {
-                        ESP_LOGI(TAG, "Request device info");
+                        ESP_LOGD(TAG, "Request device info");
                         iv->sendDevInfoRequest();
                     }
                 }
@@ -114,17 +114,17 @@ void HoymilesClass::loop()
 
             // Set limit if required
             if (iv->SystemConfigPara()->getLastLimitCommandSuccess() == CMD_NOK) {
-                ESP_LOGI(TAG, "Resend ActivePowerControl");
+                ESP_LOGD(TAG, "Resend ActivePowerControl");
                 iv->resendActivePowerControlRequest();
             }
 
             // Set power status if required
             if (iv->PowerCommand()->getLastPowerCommandSuccess() == CMD_NOK) {
-                ESP_LOGI(TAG, "Resend PowerCommand");
+                ESP_LOGD(TAG, "Resend PowerCommand");
                 iv->resendPowerControlRequest();
             }
 
-            ESP_LOGI(TAG, "Queue size - NRF: %" PRIu32 " CMT: %" PRIu32 "", _radioNrf->getQueueSize(), _radioCmt->getQueueSize());
+            ESP_LOGD(TAG, "Queue size - NRF: %" PRIu32 " CMT: %" PRIu32 "", _radioNrf->getQueueSize(), _radioCmt->getQueueSize());
             _lastPoll = millis();
         }
 

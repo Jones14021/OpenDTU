@@ -1,0 +1,41 @@
+{
+    "name": "OpenDTU PlatformIO",
+    "build": {
+        "dockerfile": "Dockerfile"
+    },
+    
+    // Give the container permissions to access host devices dynamically
+    "privileged": true,
+
+    // Mount the host's /dev directory into the container's /dev directory.
+    // This allows the container to instantly see when ttyUSB0 or ttyACM0 appears or disappears.
+    "mounts": [
+        "source=/dev,target=/dev,type=bind"
+    ],
+
+    // Map host serial device GID to an in-container group and add vscode to it.
+    "postStartCommand": "sudo bash .devcontainer/setup-serial-group.sh",
+
+    "customizations": {
+        "vscode": {
+            "settings": {
+                "terminal.integrated.profiles.linux": {
+                    "bash (serial-aware)": {
+                        "path": "/usr/local/bin/terminal-with-serial-group"
+                    }
+                },
+                "terminal.integrated.defaultProfile.linux": "bash (serial-aware)"
+            },
+            "extensions": [
+                "platformio.platformio-ide",
+                "ms-vscode.cpptools",
+                "ms-vscode.cpptools-extension-pack",
+                "mhutchie.git-graph",
+                "ms-azuretools.vscode-docker"
+            ]
+        }
+    },
+
+    // Set the user to the default vscode user provided by the base image
+    "remoteUser": "vscode"
+}

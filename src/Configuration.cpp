@@ -133,6 +133,13 @@ bool ConfigurationClass::write()
         led["brightness"] = config.Led_Single[i].Brightness;
     }
 
+    JsonObject meanwell = device["meanwell"].to<JsonObject>();
+    meanwell["npb450_can_address"] = config.Meanwell.Npb450CanAddress;
+    meanwell["npb450_target_power_min"] = config.Meanwell.Npb450TargetPowerMin;
+    meanwell["npb450_target_power_max"] = config.Meanwell.Npb450TargetPowerMax;
+    meanwell["npb450_output_energy_kwh"] = config.Meanwell.Npb450OutputEnergyKWh;
+    meanwell["npb450_input_energy_estimate_kwh"] = config.Meanwell.Npb450InputEnergyEstimateKWh;
+
     JsonArray inverters = doc["inverters"].to<JsonArray>();
     for (uint8_t i = 0; i < INV_MAX_COUNT; i++) {
         JsonObject inv = inverters.add<JsonObject>();
@@ -322,6 +329,13 @@ bool ConfigurationClass::read()
         config.Led_Single[i].Brightness = led["brightness"] | LED_BRIGHTNESS;
     }
 
+    JsonObject meanwell = device["meanwell"];
+    config.Meanwell.Npb450CanAddress = min<uint8_t>(3, meanwell["npb450_can_address"] | 3);
+    config.Meanwell.Npb450TargetPowerMin = std::clamp<uint16_t>(meanwell["npb450_target_power_min"] | 75, 75, 360);
+    config.Meanwell.Npb450TargetPowerMax = std::clamp<uint16_t>(meanwell["npb450_target_power_max"] | 360, config.Meanwell.Npb450TargetPowerMin, 360);
+    config.Meanwell.Npb450OutputEnergyKWh = std::max(0.0f, meanwell["npb450_output_energy_kwh"] | 0.0f);
+    config.Meanwell.Npb450InputEnergyEstimateKWh = std::max(0.0f, meanwell["npb450_input_energy_estimate_kwh"] | 0.0f);
+
     JsonArray inverters = doc["inverters"];
     for (uint8_t i = 0; i < INV_MAX_COUNT; i++) {
         JsonObject inv = inverters[i].as<JsonObject>();
@@ -457,6 +471,20 @@ void ConfigurationClass::migrate()
         config.Logging.Default = ESP_LOG_VERBOSE;
         strlcpy(config.Logging.Modules[0].Name, "CORE", sizeof(config.Logging.Modules[0].Name));
         config.Logging.Modules[0].Level = ESP_LOG_ERROR;
+    }
+
+    if (config.Cfg.Version < 0x00012000) {
+        config.Meanwell.Npb450CanAddress = 0x03;
+    }
+
+    if (config.Cfg.Version < 0x00012100) {
+        config.Meanwell.Npb450TargetPowerMin = 75;
+        config.Meanwell.Npb450TargetPowerMax = 360;
+        config.Meanwell.Npb450OutputEnergyKWh = 0.0f;
+    }
+
+    if (config.Cfg.Version < 0x00012200) {
+        config.Meanwell.Npb450InputEnergyEstimateKWh = 0.0f;
     }
 
     f.close();

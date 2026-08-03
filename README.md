@@ -19,6 +19,116 @@ It was the goal to replace the original Hoymiles DTU (Telemetry Gateway) with th
 The documentation can be found [here](https://tbnobody.github.io/OpenDTU-docs/).
 Please feel free to support and create a PR in [this](https://github.com/tbnobody/OpenDTU-docs) repository to make the documentation even better.
 
+## Custom Use Case: Hoymiles + Mean Well NPB-450 + Zero Export
+
+This repository can be used as a combined gateway for:
+
+1. Hoymiles inverter communication over CMT2300A.
+2. Mean Well NPB-450 charger communication over MCP2515 CAN.
+3. Zero net export control by publishing CAN commands through MQTT.
+
+For this setup, use the examples in [`examples/`](examples):
+
+1. [`examples/device_profile_npb450_gateway.json`](examples/device_profile_npb450_gateway.json): board pin mapping (CMT + ETH + MCP2515).
+2. [`examples/meanwell_npb450_can_profile.example.json`](examples/meanwell_npb450_can_profile.example.json): optional profile template for custom raw workflows.
+3. [`examples/npb450_zero_export_sim.py`](examples/npb450_zero_export_sim.py): Python MQTT control loop example for zero-export style charging.
+4. [`examples/README.md`](examples/README.md): end-to-end flow, CAN ID table, and Mermaid diagrams.
+5. [`examples/home_assistant_npb450_package.yaml`](examples/home_assistant_npb450_package.yaml): Home Assistant package for abstract NPB-450 control.
+6. [`examples/ha_emulator_dummy_loop.py`](examples/ha_emulator_dummy_loop.py): host-side Home Assistant emulator for validation.
+
+### NPB-450 Integration Modes
+
+This repository now supports two parallel integration modes for the charger:
+
+1. Raw CAN mode: external controller publishes exact frame payloads.
+2. Abstract mode: external controller publishes only `enable` and `target_w`; OpenDTU handles NPB-450 protocol details internally.
+
+#### 1) Raw CAN Mode (Exact Message Ownership in HA/Host)
+
+Use this mode if you want Home Assistant (or another external service) to fully own the command sequence and payload format.
+
+Primary topic:
+
+1. `solar/meanwell/can/tx` (publish frame JSON)
+2. `solar/meanwell/can/rx` (receive frame JSON)
+
+Frame JSON contract:
+
+```json
+{
+  "id": 786688,
+  "ext": true,
+  "rtr": false,
+  "dlc": 4,
+  "data": [194, 0, 0, 4]
+}
+```
+
+This path is suitable for strict protocol conformance tests, commissioning routines, and low-level debugging.
+
+#### 2) Abstract Mode (OpenDTU Owns NPB-450 Protocol)
+
+Use this mode if you want stable high-level control from Home Assistant without composing CAN payloads.
+
+Control topics:
+
+1. `solar/meanwell/npb450/control/enable`
+2. `solar/meanwell/npb450/control/target_w`
+3. `solar/meanwell/npb450/control/commission_psu` (one-shot commissioning command)
+
+Configuration topics:
+
+1. `solar/meanwell/npb450/config/charge_voltage_v`
+2. `solar/meanwell/npb450/config/max_current_a`
+3. `solar/meanwell/npb450/config/address`
+
+Status topics:
+
+1. `solar/meanwell/npb450/status/init_state`
+2. `solar/meanwell/npb450/status/eeprom_lock_ok`
+3. `solar/meanwell/npb450/status/psu_mode_ok`
+4. `solar/meanwell/npb450/status/target_w`
+5. `solar/meanwell/npb450/status/target_iout`
+6. `solar/meanwell/npb450/status/target_vout`
+7. `solar/meanwell/npb450/status/iout_actual`
+8. `solar/meanwell/npb450/status/control_enabled`
+9. `solar/meanwell/npb450/status/address`
+
+### NPB-450-Specific Firmware Behavior in OpenDTU
+
+In abstract mode, `MeanwellCan` now performs:
+
+1. Boot initialization sequence with EEPROM lock command (`SYSTEM_CONFIG` write).
+2. Validation polling for PSU mode and EEPROM lock state.
+3. Internal state machine (`set_eeprom_lock` -> `request_validation` -> `ready` / `fault`).
+4. Runtime conversion from target watts to current setpoint (`I = P / V`).
+5. Periodic NPB command generation (`VOUT_SET`, `IOUT_SET`, `OPERATION`).
+
+This design keeps high-frequency control writes in RAM-path operation while still allowing explicit commissioning when requested.
+
+### Home Assistant Integration
+
+For a ready-to-adapt HA package, use:
+
+1. [`examples/home_assistant_npb450_package.yaml`](examples/home_assistant_npb450_package.yaml)
+
+For host-side loop emulation (without full HA stack), use:
+
+1. [`examples/ha_emulator_dummy_loop.py`](examples/ha_emulator_dummy_loop.py)
+
+This emulator supports both raw and abstract modes and is useful to validate OpenDTU behavior before deploying automations.
+
+### Safety Notes (12V 330Ah LiFePO4)
+
+Suggested starting points for the provided examples:
+
+1. Charge voltage around `14.2-14.4V`.
+2. Max current at or below `30A` for NPB-450 envelope.
+3. Target power limit around `430W`.
+4. Enforce BMS limits and stop criteria in your automation policy.
+
+Always verify charger addressing, DIP switch profile, and commissioning procedure before unattended operation.
+
 ## Breaking changes
 
 Generated using: `git log --date=short --pretty=format:"* %h%x09%ad%x09%s" | grep BREAKING`

@@ -191,5 +191,40 @@
             "gpio2": -1,
             "gpio3": -1
         }
+    },
+    {
+        "name": "CMT2300A + ETH + MCP2515 (Meanwell PBN)",
+        "nrf24": {
+            "miso": -1,
+            "mosi": -1,
+            "clk": -1,
+            "irq": -1,
+            "en": -1,
+            "cs": -1
+        },
+        "cmt": {
+            "clk": 12,
+            "sdio": 14,
+            "cs": 4,
+            "fcs": 16,
+            "gpio2": 2,
+            "gpio3": 3
+        },
+        "eth": {
+            "enabled": true,
+            "phy_addr": 1,
+            "power": 17,
+            "mdc": 23,
+            "mdio": 18,
+            "type": 0,
+            "clk_mode": 0
+        },
+        "can": {
+            "sck": 32,
+            "mosi": 33,
+            "miso": 34,
+            "cs": 5,
+            "int": 27
+        }
     }
 ]

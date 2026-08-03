@@ -8,7 +8,7 @@
 #include <mutex>
 
 #define CONFIG_FILENAME "/config.json"
-#define CONFIG_VERSION 0x00011e00 // 0.1.30 // make sure to clean all after change
+#define CONFIG_VERSION 0x00012200 // 0.1.34 // make sure to clean all after change
 
 #define WIFI_MAX_SSID_STRLEN 32
 #define WIFI_MAX_PASSWORD_STRLEN 64
@@ -167,6 +167,14 @@ struct CONFIG_T {
     struct {
         uint8_t Brightness;
     } Led_Single[PINMAPPING_LED_COUNT];
+
+    struct {
+        uint8_t Npb450CanAddress;
+        uint16_t Npb450TargetPowerMin;
+        uint16_t Npb450TargetPowerMax;
+        float Npb450OutputEnergyKWh;
+        float Npb450InputEnergyEstimateKWh;
+    } Meanwell;
 
     INVERTER_CONFIG_T Inverter[INV_MAX_COUNT];
     char Dev_PinMapping[DEV_MAX_MAPPING_NAME_STRLEN + 1];

@@ -94,7 +94,10 @@ void HoymilesRadio_CMT::init(const int8_t pin_sdio, const int8_t pin_clk, const 
 
     _radio.reset(new CMT2300A(pin_sdio, pin_clk, pin_cs, pin_fcs));
 
-    _radio->begin();
+    if (!_radio->begin()) {
+        ESP_LOGE(TAG, "CMT2300A: begin() failed - radio init incomplete");
+        return;
+    }
 
     setCountryMode(CountryModeId_t::MODE_EU);
     cmtSwitchDtuFreq(_inverterTargetFrequency); // start dtu at work freqency, for fast Rx if inverter is already on and frequency switched
@@ -124,10 +127,13 @@ void HoymilesRadio_CMT::loop()
         return;
     }
 
-    if (!_gpio3_configured) {
-        if (_radio->rxFifoAvailable()) { // read INT2, PKT_OK flag
-            _packetReceived = true;
+    // GPIO3/INT2 is only an optimization. A missed edge must not leave the
+    // receiver unserviced indefinitely, because TX does not depend on GPIO3.
+    if (!_packetReceived && _radio->rxFifoAvailable()) { // read INT2, PKT_OK flag
+        if (_gpio3_configured) {
+            ESP_LOGD(TAG, "CMT RX packet-ready polled without GPIO3 interrupt");
         }
+        _packetReceived = true;
     }
 
     if (_packetReceived) {
@@ -172,6 +178,7 @@ void HoymilesRadio_CMT::loop()
                             getFrequencyFromChannel(f.channel) / 1000000.0, Utils::dumpArray(f.fragment, f.len).c_str(), f.rssi);
 
                         inv->addRxFragment(f.fragment, f.len, f.rssi);
+                        _consecutiveRxNoAnswer = 0;
                     } else {
                         ESP_LOGE(TAG, "Inverter Not found!");
                     }
@@ -191,6 +198,8 @@ void HoymilesRadio_CMT::loop()
 
 void HoymilesRadio_CMT::setPALevel(const int8_t paLevel)
 {
+    _configuredPaLevel = paLevel;
+
     if (!_isInitialized) {
         return;
     }
@@ -266,6 +275,8 @@ void ARDUINO_ISR_ATTR HoymilesRadio_CMT::handleInt2()
 
 void HoymilesRadio_CMT::sendEsbPacket(CommandAbstract& cmd)
 {
+    g_hoymilesCmtTxInProgress = true;
+
     cmd.incrementSendCount();
 
     cmd.setRouterAddress(DtuSerial().u64);
@@ -279,11 +290,120 @@ void HoymilesRadio_CMT::sendEsbPacket(CommandAbstract& cmd)
     ESP_LOGD(TAG, "TX %s %.2f MHz --> %s",
         cmd.getCommandName().c_str(), getFrequencyFromChannel(_radio->getChannel()) / 1000000.0, cmd.dumpDataPayload().c_str());
 
-    if (!_radio->write(cmd.getDataPayload(), cmd.getDataSize())) {
-        ESP_LOGE(TAG, "TX SPI Timeout");
+    bool txStarted = _radio->write(cmd.getDataPayload(), cmd.getDataSize());
+    if (!txStarted) {
+        const auto& diag = _radio->getLastTxDiag();
+        ESP_LOGE(TAG,
+            "TX SPI Timeout: stage=%u len=%u ch=%u mode=0x%02x fifo=0x%02x int=0x%02x intclr1=0x%02x t=%lu",
+            static_cast<unsigned>(diag.stage),
+            static_cast<unsigned>(diag.payloadLen),
+            static_cast<unsigned>(diag.channel),
+            static_cast<unsigned>(diag.modeSta),
+            static_cast<unsigned>(diag.fifoFlag),
+            static_cast<unsigned>(diag.intFlag),
+            static_cast<unsigned>(diag.intClr1),
+            static_cast<unsigned long>(diag.timestampMs));
+
+        if (recoverRadio("TX timeout")) {
+            txStarted = _radio->write(cmd.getDataPayload(), cmd.getDataSize());
+            if (!txStarted) {
+                const auto& retryDiag = _radio->getLastTxDiag();
+                ESP_LOGE(TAG,
+                    "TX retry failed: stage=%u len=%u ch=%u mode=0x%02x fifo=0x%02x int=0x%02x intclr1=0x%02x t=%lu",
+                    static_cast<unsigned>(retryDiag.stage),
+                    static_cast<unsigned>(retryDiag.payloadLen),
+                    static_cast<unsigned>(retryDiag.channel),
+                    static_cast<unsigned>(retryDiag.modeSta),
+                    static_cast<unsigned>(retryDiag.fifoFlag),
+                    static_cast<unsigned>(retryDiag.intFlag),
+                    static_cast<unsigned>(retryDiag.intClr1),
+                    static_cast<unsigned long>(retryDiag.timestampMs));
+            }
+        }
     }
+
     cmtSwitchDtuFreq(_inverterTargetFrequency);
-    _radio->startListening();
-    _busyFlag = true;
-    _rxTimeout.set(cmd.getTimeout());
+    const bool rxStarted = _radio->startListening();
+    if (!rxStarted) {
+        const auto diag = _radio->getRxDiag();
+        ESP_LOGE(TAG,
+            "RX unavailable after TX ch=%u mode=0x%02x int=0x%02x intclr1=0x%02x fifo=0x%02x fifoctl=0x%02x rssi=%" PRId8,
+            static_cast<unsigned>(diag.channel),
+            static_cast<unsigned>(diag.modeSta),
+            static_cast<unsigned>(diag.intFlag),
+            static_cast<unsigned>(diag.intClr1),
+            static_cast<unsigned>(diag.fifoFlag),
+            static_cast<unsigned>(diag.fifoCtl),
+            diag.rssiDbm);
+        recoverRadio("RX start failure");
+    }
+    g_hoymilesCmtTxInProgress = false;
+
+    // Only enter RX wait mode if the TX transaction actually started.
+    // Otherwise keep the radio idle so command handling can recover quickly.
+    _busyFlag = txStarted && rxStarted;
+    if (_busyFlag) {
+        _rxTimeout.set(cmd.getTimeout());
+    }
+}
+
+void HoymilesRadio_CMT::onRxNoAnswer()
+{
+    if (_consecutiveRxNoAnswer < UINT8_MAX) {
+        ++_consecutiveRxNoAnswer;
+    }
+
+    const auto diag = _radio->getRxDiag();
+    const bool inRx = _radio->isReceiving();
+    const uint32_t now = millis();
+    const bool recoveryDue = !inRx || _consecutiveRxNoAnswer >= 3;
+
+    if (_consecutiveRxNoAnswer == 1 || now - _lastRxDiagLogMs >= 5000) {
+        _lastRxDiagLogMs = now;
+        ESP_LOGW(TAG,
+            "CMT RX no-answer count=%u ch=%u mode=0x%02x int=0x%02x intclr1=0x%02x fifo=0x%02x fifoctl=0x%02x rssi=%" PRId8,
+            static_cast<unsigned>(_consecutiveRxNoAnswer),
+            static_cast<unsigned>(diag.channel),
+            static_cast<unsigned>(diag.modeSta),
+            static_cast<unsigned>(diag.intFlag),
+            static_cast<unsigned>(diag.intClr1),
+            static_cast<unsigned>(diag.fifoFlag),
+            static_cast<unsigned>(diag.fifoCtl),
+            diag.rssiDbm);
+    }
+
+    if (!recoveryDue || now < _nextRxRecoveryAttemptMs) {
+        return;
+    }
+    _nextRxRecoveryAttemptMs = now + 30000;
+    recoverRadio("RX no-answer");
+}
+
+bool HoymilesRadio_CMT::recoverRadio(const char* reason)
+{
+    if (millis() < _nextRecoveryAttemptMs) {
+        return false;
+    }
+    _nextRecoveryAttemptMs = millis() + 2000;
+
+    ESP_LOGE(TAG, "Attempting CMT radio recovery after %s", reason);
+
+    if (!_radio->isChipConnected()) {
+        ESP_LOGE(TAG, "CMT recovery aborted: chip no longer responding");
+        return false;
+    }
+
+    _radio->stopListening();
+    setCountryMode(_countryMode);
+    cmtSwitchDtuFreq(_inverterTargetFrequency);
+    _radio->setPALevel(_configuredPaLevel);
+    if (!_radio->startListening()) {
+        ESP_LOGE(TAG, "CMT recovery failed: startListening() failed");
+        return false;
+    }
+    _packetReceived = false;
+    _packetSent = false;
+
+    ESP_LOGE(TAG, "CMT recovery completed");
+    return true;
 }

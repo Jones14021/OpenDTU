@@ -10,6 +10,8 @@
 #undef TAG
 static const char* TAG = "hoymiles";
 
+volatile bool g_hoymilesCmtTxInProgress = false;
+
 serial_u HoymilesRadio::DtuSerial() const
 {
     return _dtuSerial;
@@ -58,18 +60,18 @@ void HoymilesRadio::sendLastPacketAgain()
 void HoymilesRadio::handleReceivedPackage()
 {
     if (_busyFlag && _rxTimeout.occured()) {
-        ESP_LOGI(TAG, "RX Period End");
+        ESP_LOGD(TAG, "RX Period End");
         std::shared_ptr<InverterAbstract> inv = Hoymiles.getInverterBySerial(_commandQueue.front().get()->getTargetAddress());
 
         if (nullptr != inv) {
             CommandAbstract* cmd = _commandQueue.front().get();
             uint8_t verifyResult = inv->verifyAllFragments(*cmd);
             if (verifyResult == FRAGMENT_ALL_MISSING_RESEND) {
-                ESP_LOGW(TAG, "Nothing received, resend whole request");
+                ESP_LOGD(TAG, "Nothing received, resend whole request");
                 sendLastPacketAgain();
 
             } else if (verifyResult == FRAGMENT_ALL_MISSING_TIMEOUT) {
-                ESP_LOGW(TAG, "Nothing received, resend count exeeded");
+                ESP_LOGD(TAG, "Nothing received, resend count exeeded");
                 // Statistics: Count RX Fail No Answer
                 if (inv->RadioStats.TxRequestData > 0) {
                     inv->RadioStats.RxFailNoAnswer++;
@@ -77,9 +79,10 @@ void HoymilesRadio::handleReceivedPackage()
 
                 _commandQueue.pop();
                 _busyFlag = false;
+                onRxNoAnswer();
 
             } else if (verifyResult == FRAGMENT_RETRANSMIT_TIMEOUT) {
-                ESP_LOGW(TAG, "Retransmit timeout");
+                ESP_LOGD(TAG, "Retransmit timeout");
                 // Statistics: Count RX Fail Partial Answer
                 if (inv->RadioStats.TxRequestData > 0) {
                     inv->RadioStats.RxFailPartialAnswer++;
@@ -89,7 +92,7 @@ void HoymilesRadio::handleReceivedPackage()
                 _busyFlag = false;
 
             } else if (verifyResult == FRAGMENT_HANDLE_ERROR) {
-                ESP_LOGW(TAG, "Packet handling error");
+                ESP_LOGD(TAG, "Packet handling error");
                 // Statistics: Count RX Fail Corrupt Data
                 if (inv->RadioStats.TxRequestData > 0) {
                     inv->RadioStats.RxFailCorruptData++;
@@ -100,7 +103,7 @@ void HoymilesRadio::handleReceivedPackage()
 
             } else if (verifyResult > 0) {
                 // Perform Retransmit
-                ESP_LOGI(TAG, "Request retransmit: %" PRIu8 "", verifyResult);
+                ESP_LOGD(TAG, "Request retransmit: %" PRIu8 "", verifyResult);
                 // Statistics: Count TX Re-Request Fragment
                 inv->RadioStats.TxReRequestFragment++;
 
@@ -108,7 +111,7 @@ void HoymilesRadio::handleReceivedPackage()
 
             } else {
                 // Successful received all packages
-                ESP_LOGI(TAG, "Success");
+                ESP_LOGD(TAG, "Success");
                 // Statistics: Count RX Success
                 if (inv->RadioStats.TxRequestData > 0) {
                     inv->RadioStats.RxSuccess++;
@@ -119,7 +122,7 @@ void HoymilesRadio::handleReceivedPackage()
             }
         } else {
             // If inverter was not found, assume the command is invalid
-            ESP_LOGW(TAG, "RX: Invalid inverter found");
+            ESP_LOGD(TAG, "RX: Invalid inverter found");
             // Statistics: Count RX Fail Unknown Data
             _commandQueue.pop();
             _busyFlag = false;

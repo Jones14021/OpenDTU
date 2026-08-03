@@ -49,10 +49,19 @@ void InverterSettingsClass::init(Scheduler& scheduler)
     if (PinMapping.isValidCmt2300Config()) {
         ESP_LOGI(TAG, "CMT2300A: Initialize communication");
         Hoymiles.initCMT(pin.cmt_sdio, pin.cmt_clk, pin.cmt_cs, pin.cmt_fcs, pin.cmt_gpio2, pin.cmt_gpio3);
-        ESP_LOGI(TAG, "CMT2300A: Setting country mode...");
-        Hoymiles.getRadioCmt()->setCountryMode(static_cast<CountryModeId_t>(config.Dtu.Cmt.CountryMode));
-        ESP_LOGI(TAG, "CMT2300A: Setting CMT target frequency...");
-        Hoymiles.getRadioCmt()->setInverterTargetFrequency(config.Dtu.Cmt.Frequency);
+        if (!Hoymiles.getRadioCmt()->isInitialized()) {
+            ESP_LOGE(TAG, "CMT2300A: Initialization failed - skipping CMT configuration");
+        } else {
+            ESP_LOGI(TAG, "CMT2300A: Setting country mode...");
+            Hoymiles.getRadioCmt()->setCountryMode(static_cast<CountryModeId_t>(config.Dtu.Cmt.CountryMode));
+            ESP_LOGI(TAG, "CMT2300A: Setting CMT target frequency...");
+            Hoymiles.getRadioCmt()->setInverterTargetFrequency(config.Dtu.Cmt.Frequency);
+        }
+    }
+
+    if (!Hoymiles.getRadioNrf()->isInitialized() && !Hoymiles.getRadioCmt()->isInitialized()) {
+        ESP_LOGE(TAG, "No radio initialized successfully - skipping inverter setup");
+        return;
     }
 
     // Configure common radio settings

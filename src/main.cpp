@@ -9,6 +9,7 @@
 #include "InverterSettings.h"
 #include "Led_Single.h"
 #include "Logging.h"
+#include "MeanwellCan.h"
 #include "MessageOutput.h"
 #include "MqttHandleDtu.h"
 #include "MqttHandleHass.h"
@@ -124,6 +125,12 @@ void setup()
     LedSingle.init(scheduler);
 
     InverterSettings.init(scheduler);
+
+    // Start MCP2515-based Meanwell CAN gateway only after the CMT2300A radio
+    // has been fully initialized. The MeanwellCan task drives a separate SPI
+    // peripheral, but bringing it up earlier can compete with the inverter
+    // radio for CPU time during its blocking init/TX polling loops.
+    MeanwellCan.init();
 
     Datastore.init(scheduler);
     RestartHelper.init(scheduler);

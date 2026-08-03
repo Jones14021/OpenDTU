@@ -86,17 +86,29 @@ private:
     static void publishDtuSensor(const String& name, const String& state_topic, const String& unit_of_measure, const String& icon, const DeviceClassType device_class, const StateClassType state_class, const CategoryType category);
     static void publishInverterSensor(std::shared_ptr<InverterAbstract> inv, const String& name, const String& state_topic, const String& unit_of_measure, const String& icon, const DeviceClassType device_class, const StateClassType state_class, const CategoryType category);
 
+    // Meanwell NPB-450
+    static void publishMeanwellNpb450Config();
+    static void clearMeanwellNpb450Config();
+    static void publishMeanwellNpb450Sensor(const String& name, const String& state_topic, const String& unit_of_measure, const String& icon, const DeviceClassType device_class, const StateClassType state_class, const CategoryType category);
+    static void publishMeanwellNpb450BinarySensor(const String& name, const String& state_topic, const String& payload_on, const String& payload_off, const DeviceClassType device_class, const StateClassType state_class, const CategoryType category);
+    static void publishMeanwellNpb450Switch(const String& name, const String& state_topic, const String& command_topic, const String& payload_on, const String& payload_off, const String& state_on, const String& state_off, const String& icon, const CategoryType category);
+    static void publishMeanwellNpb450Number(const String& name, const String& state_topic, const String& command_topic, const float min, const float max, const float step, const String& unit_of_measure, const String& icon, const StateClassType state_class, const CategoryType category, const bool slider = false);
+    static void publishMeanwellNpb450Button(const String& name, const String& command_topic, const String& payload, const String& icon, const CategoryType category);
+
     static void publishInverterField(std::shared_ptr<InverterAbstract> inv, const ChannelType_t type, const ChannelNum_t channel, const byteAssign_fieldDeviceClass_t fieldType, const bool clear = false);
     static void publishInverterButton(std::shared_ptr<InverterAbstract> inv, const String& name, const String& state_topic, const String& payload, const String& icon, const DeviceClassType device_class, const StateClassType state_class, const CategoryType category);
     static void publishInverterNumber(std::shared_ptr<InverterAbstract> inv, const String& name, const String& state_topic, const String& command_topic, const int16_t min, const int16_t max, float step, const String& unit_of_measure, const String& icon, const StateClassType state_class, const CategoryType category);
 
     static void createInverterInfo(JsonDocument& doc, std::shared_ptr<InverterAbstract> inv);
     static void createDtuInfo(JsonDocument& doc);
+    static void createMeanwellNpb450Info(JsonDocument& doc);
 
     static void createDeviceInfo(JsonDocument& doc, const String& name, const String& identifiers, const String& configuration_url, const String& manufacturer, const String& model, const String& sw_version, const String& via_device = "");
 
     static String getDtuUniqueId();
     static String getDtuUrl();
+    static String getMeanwellNpb450UniqueId();
+    static String getMeanwellNpb450RootDevice();
 
     Task _loopTask;
     TimeoutHelper _publishConfigTimeout;

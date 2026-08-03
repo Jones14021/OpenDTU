@@ -18,6 +18,29 @@ enum FrequencyBand_t {
 
 class CMT2300A {
 public:
+    struct TxDiag {
+        uint32_t timestampMs = 0;
+        uint8_t stage = 0;
+        uint8_t payloadLen = 0;
+        uint8_t channel = 0;
+        uint8_t fifoFlag = 0;
+        uint8_t intFlag = 0;
+        uint8_t intClr1 = 0;
+        uint8_t modeSta = 0;
+    };
+
+    struct RxDiag {
+        uint32_t timestampMs = 0;
+        uint8_t channel = 0;
+        uint8_t modeSta = 0;
+        uint8_t intFlag = 0;
+        uint8_t intClr1 = 0;
+        uint8_t fifoFlag = 0;
+        uint8_t fifoCtl = 0;
+        uint8_t rssiCode = 0;
+        int8_t rssiDbm = 0;
+    };
+
     CMT2300A(const uint8_t pin_sdio, const uint8_t pin_clk, const uint8_t pin_cs, const uint8_t pin_fcs, const uint32_t _spi_speed = CMT_SPI_SPEED);
 
     bool begin(void);
@@ -30,6 +53,7 @@ public:
     bool startListening(void);
 
     bool stopListening(void);
+    bool isReceiving() const;
 
     /**
      * Check whether there are bytes available to be read
@@ -65,6 +89,9 @@ public:
     void read(void* buf, const uint8_t len);
 
     bool write(const uint8_t* buf, const uint8_t len);
+
+    const TxDiag& getLastTxDiag() const;
+    RxDiag getRxDiag() const;
 
     /**
      * Set RF communication channel. The frequency used by a channel is
@@ -133,6 +160,8 @@ private:
     int8_t _pin_cs;
     int8_t _pin_fcs;
     uint32_t _spi_speed;
+
+    TxDiag _lastTxDiag;
 
     FrequencyBand_t _frequencyBand = FrequencyBand_t::BAND_860;
 };

@@ -64,6 +64,22 @@ bool SpiManager::claim_bus(spi_host_device_t& host_device)
     return false;
 }
 
+bool SpiManager::claim_bus(spi_host_device_t preferred, spi_host_device_t& host_device)
+{
+    for (int i = 0; i < SPI_MANAGER_NUM_BUSES; ++i) {
+        if (!available_buses[i])
+            continue;
+        if (*available_buses[i] != preferred)
+            continue;
+
+        host_device = *available_buses[i];
+        available_buses[i].reset();
+        return true;
+    }
+
+    return false;
+}
+
 #ifdef ARDUINO
 
 std::optional<uint8_t> SpiManager::claim_bus_arduino()
@@ -74,18 +90,26 @@ std::optional<uint8_t> SpiManager::claim_bus_arduino()
     return to_arduino(host_device);
 }
 
+std::optional<uint8_t> SpiManager::claim_bus_arduino(spi_host_device_t preferred)
+{
+    spi_host_device_t host_device;
+    if (!claim_bus(preferred, host_device))
+        return std::nullopt;
+    return to_arduino(host_device);
+}
+
 #endif
 
-spi_device_handle_t SpiManager::alloc_device(const std::string& bus_id, const std::shared_ptr<SpiBusConfig>& bus_config, spi_device_interface_config_t& device_config)
+spi_device_handle_t SpiManager::alloc_device(const std::string& bus_id, const std::shared_ptr<SpiBusConfig>& bus_config, spi_device_interface_config_t& device_config, std::optional<spi_host_device_t> preferred_host)
 {
-    std::shared_ptr<SpiBus> shared_bus = get_shared_bus(bus_id);
+    std::shared_ptr<SpiBus> shared_bus = get_shared_bus(bus_id, preferred_host);
     if (!shared_bus)
         return nullptr;
 
     return shared_bus->add_device(bus_config, device_config);
 }
 
-std::shared_ptr<SpiBus> SpiManager::get_shared_bus(const std::string& bus_id)
+std::shared_ptr<SpiBus> SpiManager::get_shared_bus(const std::string& bus_id, std::optional<spi_host_device_t> preferred_host)
 {
     // look for existing shared bus
     for (int i = 0; i < SPI_MANAGER_NUM_BUSES; ++i) {
@@ -101,7 +125,10 @@ std::shared_ptr<SpiBus> SpiManager::get_shared_bus(const std::string& bus_id)
             continue;
 
         spi_host_device_t host_device;
-        if (!claim_bus(host_device))
+        const bool claimed = preferred_host
+            ? claim_bus(*preferred_host, host_device)
+            : claim_bus(host_device);
+        if (!claimed)
             return nullptr;
 
         shared_buses[i] = std::make_shared<SpiBus>(bus_id, host_device);
